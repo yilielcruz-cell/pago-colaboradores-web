@@ -571,7 +571,27 @@
     };
   }
 
-  /** Acepta backup web o el JSON de Windows/Android (BackupData). */
+  function asArray(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") return Object.values(value);
+    return [];
+  }
+
+  function asObjectMap(value) {
+    if (!value) return {};
+    if (Array.isArray(value)) {
+      const map = {};
+      value.forEach((r) => {
+        const ced = cleanCedula(r?.cedula);
+        if (ced) map[ced] = r;
+      });
+      return map;
+    }
+    if (typeof value === "object") return value;
+    return {};
+  }
+
+  /** Acepta backup web, BackupData Windows/Android o app_data.json. */
   function normalizeImportedBackup(data) {
     if (!data || typeof data !== "object") throw new Error("Archivo inválido");
 
@@ -579,38 +599,69 @@
     next.usuario = data.usuario || state.usuario || "";
     next.contrasena = data.contrasena || state.contrasena || "";
 
-    // Formato Windows/Android: colaboradoresTemporales + registrosPagos
+    const desktopRegs = data.registrosPagos ?? data.registrosPago;
+    const desktopColabs = data.colaboradoresTemporales;
     const isDesktop =
-      data.colaboradoresTemporales != null ||
-      data.registrosPagos != null ||
-      data.serviciosPersonalizados != null;
+      desktopColabs != null ||
+      desktopRegs != null ||
+      data.serviciosPersonalizados != null ||
+      data.tiposCuentaPersonalizados != null ||
+      data.bancosPersonalizados != null;
 
     if (isDesktop) {
-      const colabMap = data.colaboradoresTemporales || {};
+      const colabMap = asObjectMap(desktopColabs);
       Object.values(colabMap).forEach((r) => {
-        const c = colabFromRegistro(r);
+        const c = colabFromRegistro(r || {});
         if (c.cedula) next.colaboradores[c.cedula] = c;
       });
-      next.registros = (data.registrosPagos || []).map(normalizeRegistro);
-      next.serviciosExtra = [...(data.serviciosPersonalizados || [])];
-      next.tiposExtra = [...(data.tiposCuentaPersonalizados || [])];
-      next.bancosExtra = [...(data.bancosPersonalizados || [])];
+      // Si solo hay registros, también arma colaboradores desde ellos
+      asArray(desktopRegs).forEach((r) => {
+        const c = colabFromRegistro(r || {});
+        if (c.cedula && !next.colaboradores[c.cedula]) next.colaboradores[c.cedula] = c;
+      });
+      next.registros = asArray(desktopRegs).map(normalizeRegistro);
+      next.serviciosExtra = asArray(data.serviciosPersonalizados);
+      next.tiposExtra = asArray(data.tiposCuentaPersonalizados);
+      next.bancosExtra = asArray(data.bancosPersonalizados);
       return next;
     }
 
     // Formato web nativo
     if (data.colaboradores && typeof data.colaboradores === "object") {
-      Object.entries(data.colaboradores).forEach(([key, r]) => {
-        const c = colabFromRegistro(r);
+      Object.entries(asObjectMap(data.colaboradores)).forEach(([key, r]) => {
+        const c = colabFromRegistro(r || {});
         const ced = c.cedula || cleanCedula(key);
         if (ced) next.colaboradores[ced] = { ...c, cedula: ced };
       });
     }
-    next.registros = (data.registros || []).map(normalizeRegistro);
-    next.serviciosExtra = [...(data.serviciosExtra || [])];
-    next.tiposExtra = [...(data.tiposExtra || [])];
-    next.bancosExtra = [...(data.bancosExtra || [])];
+    next.registros = asArray(data.registros).map(normalizeRegistro);
+    next.serviciosExtra = asArray(data.serviciosExtra);
+    next.tiposExtra = asArray(data.tiposExtra);
+    next.bancosExtra = asArray(data.bancosExtra);
     return next;
+  }
+
+  function applyImportedText(rawText, sourceLabel) {
+    const raw = String(rawText || "").trim().replace(/^\uFEFF/, "");
+    if (!raw) throw new Error("El texto está vacío");
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error("No es un JSON válido. Abre el archivo en Notas, copia TODO y pégalo aquí.");
+    }
+    state = normalizeImportedBackup(data);
+    save();
+    const nColab = Object.keys(state.colaboradores).length;
+    const nReg = state.registros.length;
+    if (nColab === 0 && nReg === 0) {
+      $("#backupStatus").textContent =
+        `Se leyó el archivo (${sourceLabel}), pero venía sin colaboradores ni pagos. Exporta de nuevo en Windows: Backup → Exportar Datos.`;
+      toast("JSON vacío de datos");
+      return;
+    }
+    $("#backupStatus").textContent = `Importado (${sourceLabel}): ${nColab} colaborador(es), ${nReg} registro(s).`;
+    toast("Backup importado");
   }
 
   function exportBackup() {
@@ -647,24 +698,32 @@
   }
 
   function importBackup(file) {
+    if (!file) {
+      $("#backupStatus").textContent = "No se eligió archivo.";
+      return;
+    }
+    $("#backupStatus").textContent = `Leyendo ${file.name || "archivo"}…`;
     const reader = new FileReader();
+    reader.onerror = () => {
+      $("#backupStatus").textContent =
+        "iPhone no pudo leer el archivo. Ábrelo en Notas, copia todo y usa “Importar texto pegado”.";
+      toast("Usa pegar JSON");
+    };
     reader.onload = () => {
       try {
-        const raw = String(reader.result || "").trim().replace(/^\uFEFF/, "");
-        const data = JSON.parse(raw);
-        state = normalizeImportedBackup(data);
-        save();
-        const nColab = Object.keys(state.colaboradores).length;
-        const nReg = state.registros.length;
-        $("#backupStatus").textContent = `Importado: ${nColab} colaborador(es), ${nReg} registro(s).`;
-        toast("Backup importado");
+        applyImportedText(reader.result, file.name || "archivo");
       } catch (err) {
         console.error(err);
-        $("#backupStatus").textContent = "No se pudo importar. Usa el JSON de Backup de Windows o de esta web.";
+        $("#backupStatus").textContent = err.message || "No se pudo importar el archivo.";
         toast("Backup inválido");
       }
     };
-    reader.readAsText(file);
+    // text/plain ayuda en Safari iOS
+    try {
+      reader.readAsText(file, "UTF-8");
+    } catch {
+      reader.readAsText(file);
+    }
   }
 
   function escapeHtml(s) {
@@ -811,6 +870,27 @@
       const file = e.target.files?.[0];
       if (file) importBackup(file);
       e.target.value = "";
+    });
+    $("#importPasteBtn").addEventListener("click", () => {
+      try {
+        applyImportedText($("#pasteBackup").value, "texto pegado");
+      } catch (err) {
+        $("#backupStatus").textContent = err.message || "No se pudo importar.";
+        toast("Backup inválido");
+      }
+    });
+    $("#importClipboardBtn").addEventListener("click", async () => {
+      try {
+        if (!navigator.clipboard?.readText) {
+          throw new Error("Este iPhone no permite leer el portapapeles aquí. Pega manualmente en la caja de texto.");
+        }
+        const text = await navigator.clipboard.readText();
+        $("#pasteBackup").value = text;
+        applyImportedText(text, "portapapeles");
+      } catch (err) {
+        $("#backupStatus").textContent = err.message || "No se pudo leer el portapapeles.";
+        toast("Pega el JSON a mano");
+      }
     });
   }
 

@@ -11,7 +11,10 @@
   <title>Pago a Colaboradores</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=import2" />
+  <script>
+    // evita caché vieja en iPhone al actualizar
+  </script>
 </head>
 <body>
   <div class="app-bg" aria-hidden="true"></div>
@@ -181,11 +184,20 @@
         <h1>Backup</h1>
       </header>
       <section class="panel form">
-        <p class="muted">Puedes importar el JSON de Windows (<strong>Exportar Datos</strong> en la app de escritorio) o un backup de esta web. En el iPhone: AirDrop / Archivos → elige el .json.</p>
+        <p class="muted">En iPhone lo más seguro es <strong>pegar el JSON</strong> (el selector de archivos a veces no funciona en pantalla de inicio).</p>
         <button type="button" class="btn primary" id="exportBackup">Exportar backup</button>
-        <label class="btn ghost file-btn">Importar backup
-          <input type="file" id="importBackup" accept="application/json,.json,text/json,*/*" hidden />
+
+        <label class="file-visible">Elegir archivo .json
+          <input type="file" id="importBackup" accept=".json,application/json,text/plain,*/*" />
         </label>
+
+        <label>O pega aquí el contenido del JSON
+          <textarea id="pasteBackup" rows="6" placeholder='{"version":1,"registrosPagos":[],"colaboradoresTemporales":{...}}'></textarea>
+        </label>
+        <div class="row">
+          <button type="button" class="btn green" id="importPasteBtn">Importar texto pegado</button>
+          <button type="button" class="btn ghost" id="importClipboardBtn">Pegar del portapapeles</button>
+        </div>
         <p class="muted" id="backupStatus"></p>
       </section>
     </main>
@@ -210,6 +222,6 @@
 
   <div id="printArea" class="print-doc" hidden></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=import2"></script>
 </body>
 </html>
