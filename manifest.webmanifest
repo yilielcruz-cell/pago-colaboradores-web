@@ -1,0 +1,19 @@
+{
+  "name": "Pago a Colaboradores",
+  "short_name": "Pagos",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1c2d",
+  "theme_color": "#1E88E5",
+  "description": "Registro de pagos y colaboradores (datos solo en este dispositivo)",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

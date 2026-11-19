@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1E88E5" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Pagos" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Pago a Colaboradores</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-bg" aria-hidden="true"></div>
+
+  <div class="phone">
+    <!-- LOGIN -->
+    <main id="screen-login" class="screen">
+      <div class="brand">
+        <img src="icon.png" alt="" class="brand-icon" />
+        <h1>Pago a Colaboradores</h1>
+        <p class="muted" id="loginHint">Inicia sesión</p>
+      </div>
+      <section class="panel">
+        <label>Usuario
+          <input id="loginUser" type="text" autocomplete="username" />
+        </label>
+        <label>Contraseña
+          <input id="loginPass" type="password" autocomplete="current-password" />
+        </label>
+        <button type="button" class="btn primary" id="loginBtn">Entrar</button>
+        <button type="button" class="btn ghost" id="setupBtn" hidden>Crear acceso</button>
+        <button type="button" class="linkish" id="openSettings">Configuración</button>
+      </section>
+    </main>
+
+    <!-- MENU -->
+    <main id="screen-menu" class="screen hidden">
+      <header class="top">
+        <img src="icon.png" alt="" class="mini-icon" />
+        <div>
+          <h1>Pago a Colaboradores</h1>
+          <p class="muted" id="welcomeUser"></p>
+        </div>
+      </header>
+      <nav class="menu">
+        <button type="button" class="btn primary" data-go="agregar">Agregar Colaborador</button>
+        <button type="button" class="btn blue" data-go="modificar">Modificar Colaborador</button>
+        <button type="button" class="btn danger" data-go="eliminar">Eliminar Colaborador</button>
+        <button type="button" class="btn green" data-go="registro">Registro de Actividad</button>
+        <button type="button" class="btn teal" data-go="historial">Historial</button>
+        <button type="button" class="btn orange" data-go="resumen">Resumen de Pagos</button>
+        <button type="button" class="btn purple" data-go="backup">Backup</button>
+        <button type="button" class="btn ghost" id="logoutBtn">Cerrar sesión</button>
+      </nav>
+      <p class="footer-note">Datos solo en este iPhone · Creado por Eliezer Cruz</p>
+    </main>
+
+    <!-- AGREGAR -->
+    <main id="screen-agregar" class="screen hidden">
+      <header class="top bar">
+        <button type="button" class="back" data-back>‹</button>
+        <h1>Agregar Colaborador</h1>
+      </header>
+      <form id="formAgregar" class="panel form">
+        <label>Colaborador<input name="colaborador" required /></label>
+        <label>Cédula<input name="cedula" inputmode="numeric" placeholder="000-0000000-0" maxlength="13" required /></label>
+        <label>Número de cuenta<input name="cuenta" inputmode="numeric" required /></label>
+        <label>Tipo de cuenta
+          <select name="tipoCuenta" id="tipoCuentaAdd" required></select>
+        </label>
+        <label>Banco
+          <select name="banco" id="bancoAdd" required></select>
+        </label>
+        <label>Correo (opcional)<input name="correo" type="email" /></label>
+        <div class="row">
+          <button type="button" class="btn ghost mini" id="addTipoBtn">+ Tipo</button>
+          <button type="button" class="btn ghost mini" id="addBancoBtn">+ Banco</button>
+        </div>
+        <button type="submit" class="btn primary">Guardar</button>
+      </form>
+    </main>
+
+    <!-- MODIFICAR -->
+    <main id="screen-modificar" class="screen hidden">
+      <header class="top bar">
+        <button type="button" class="back" data-back>‹</button>
+        <h1>Modificar Colaborador</h1>
+      </header>
+      <section class="panel form">
+        <label>Seleccionar
+          <select id="modificarSelect"></select>
+        </label>
+        <form id="formModificar" class="form" hidden>
+          <input type="hidden" name="cedulaOriginal" />
+          <label>Colaborador<input name="colaborador" required /></label>
+          <label>Cédula<input name="cedula" inputmode="numeric" maxlength="13" required /></label>
+          <label>Número de cuenta<input name="cuenta" inputmode="numeric" required /></label>
+          <label>Tipo de cuenta<select name="tipoCuenta" id="tipoCuentaMod" required></select></label>
+          <label>Banco<select name="banco" id="bancoMod" required></select></label>
+          <label>Correo<input name="correo" type="email" /></label>
+          <button type="submit" class="btn primary">Guardar cambios</button>
+        </form>
+      </section>
+    </main>
+
+    <!-- ELIMINAR -->
+    <main id="screen-eliminar" class="screen hidden">
+      <header class="top bar">
+        <button type="button" class="back" data-back>‹</button>
+        <h1>Eliminar Colaborador</h1>
+      </header>
+      <section class="panel">
+        <div id="listaEliminar" class="list"></div>
+      </section>
+    </main>
+
+    <!-- REGISTRO -->
+    <main id="screen-registro" class="screen hidden">
+      <header class="top bar">
+        <button type="button" class="back" data-back>‹</button>
+        <h1>Registro de Actividad</h1>
+      </header>
+      <form id="formRegistro" class="panel form">
+        <label>Colaborador
+          <select id="registroColab" required></select>
+        </label>
+        <div id="colabInfo" class="info-box" hidden></div>
+        <label>Actividad<input id="registroActividad" required placeholder="Descripción" /></label>
+        <label>Servicios
+          <select id="registroServicio"></select>
+        </label>
+        <button type="button" class="btn ghost mini" id="addServicioBtn">+ Servicio</button>
+        <div id="serviciosChips" class="chips"></div>
+        <div id="montosBox" class="montos"></div>
+        <label>Fechas (toca para marcar)
+          <input id="fechaPicker" type="date" />
+        </label>
+        <button type="button" class="btn ghost mini" id="addFechaBtn">Agregar fecha</button>
+        <div id="fechasChips" class="chips"></div>
+        <p class="total" id="registroTotal">Total: DOP $0.00</p>
+        <button type="submit" class="btn green">Guardar actividad</button>
+      </form>
+    </main>
+
+    <!-- HISTORIAL -->
+    <main id="screen-historial" class="screen hidden">
+      <header class="top bar">
+        <button type="button" class="back" data-back>‹</button>
+        <h1>Historial</h1>
+      </header>
+      <section class="panel">
+        <div id="listaHistorial" class="list"></div>
+        <button type="button" class="btn danger" id="limpiarHistorial" hidden>Limpiar historial</button>
+      </section>
+    </main>
+
+    <!-- RESUMEN -->
+    <main id="screen-resumen" class="screen hidden">
+      <header class="top bar">
+        <button type="button" class="back" data-back>‹</button>
+        <h1>Resumen de Pagos</h1>
+      </header>
+      <section class="panel">
+        <div class="total-card" id="totalGeneral">Total General<br /><strong>DOP $0.00</strong></div>
+        <div id="listaResumen" class="list"></div>
+        <div class="row">
+          <button type="button" class="btn primary" id="imprimirResumen">Imprimir / PDF</button>
+          <button type="button" class="btn ghost" id="vistaPrevia">Vista previa</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- BACKUP -->
+    <main id="screen-backup" class="screen hidden">
+      <header class="top bar">
+        <button type="button" class="back" data-back>‹</button>
+        <h1>Backup</h1>
+      </header>
+      <section class="panel form">
+        <p class="muted">Exporta o importa un archivo JSON. Útil para pasar datos entre dispositivos.</p>
+        <button type="button" class="btn primary" id="exportBackup">Exportar backup</button>
+        <label class="btn ghost file-btn">Importar backup
+          <input type="file" id="importBackup" accept="application/json,.json" hidden />
+        </label>
+        <p class="muted" id="backupStatus"></p>
+      </section>
+    </main>
+  </div>
+
+  <!-- DIALOGS -->
+  <div id="toast" class="toast hidden"></div>
+  <dialog id="settingsDialog">
+    <h2>Configuración</h2>
+    <p class="muted">Puedes resetear el acceso y todos los datos de este dispositivo.</p>
+    <button type="button" class="btn danger" id="resetApp">Resetear aplicación</button>
+    <button type="button" class="btn ghost" id="closeSettings">Cerrar</button>
+  </dialog>
+
+  <dialog id="previewDialog" class="wide">
+    <div id="previewContent" class="print-doc"></div>
+    <div class="row no-print">
+      <button type="button" class="btn primary" id="printFromPreview">Imprimir</button>
+      <button type="button" class="btn ghost" id="closePreview">Cerrar</button>
+    </div>
+  </dialog>
+
+  <div id="printArea" class="print-doc" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
