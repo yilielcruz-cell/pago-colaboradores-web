@@ -538,28 +538,129 @@
     }, 500);
   }
 
+  function colabFromRegistro(r) {
+    return {
+      colaborador: r.colaborador || "",
+      cedula: cleanCedula(r.cedula),
+      cuenta: String(r.cuenta || "").replace(/\D/g, ""),
+      tipoCuenta: r.tipoCuenta || "",
+      banco: r.banco || "",
+      correoElectronico: r.correoElectronico || "",
+    };
+  }
+
+  function normalizeRegistro(r) {
+    const montos =
+      r.montosPorServicio && typeof r.montosPorServicio === "object"
+        ? r.montosPorServicio
+        : {};
+    return {
+      id: r.id || Date.now(),
+      colaborador: r.colaborador || "",
+      cedula: cleanCedula(r.cedula),
+      cuenta: String(r.cuenta || "").replace(/\D/g, ""),
+      tipoCuenta: r.tipoCuenta || "",
+      banco: r.banco || "",
+      correoElectronico: r.correoElectronico || "",
+      actividad: r.actividad || "",
+      servicios: Array.isArray(r.servicios) ? r.servicios : [],
+      montoPorActividad: Number(r.montoPorActividad) || 0,
+      montosPorServicio: montos,
+      fechas: Array.isArray(r.fechas) ? r.fechas.map(Number) : [],
+      montoTotal: Number(r.montoTotal) || 0,
+    };
+  }
+
+  /** Acepta backup web o el JSON de Windows/Android (BackupData). */
+  function normalizeImportedBackup(data) {
+    if (!data || typeof data !== "object") throw new Error("Archivo inválido");
+
+    const next = defaultState();
+    next.usuario = data.usuario || state.usuario || "";
+    next.contrasena = data.contrasena || state.contrasena || "";
+
+    // Formato Windows/Android: colaboradoresTemporales + registrosPagos
+    const isDesktop =
+      data.colaboradoresTemporales != null ||
+      data.registrosPagos != null ||
+      data.serviciosPersonalizados != null;
+
+    if (isDesktop) {
+      const colabMap = data.colaboradoresTemporales || {};
+      Object.values(colabMap).forEach((r) => {
+        const c = colabFromRegistro(r);
+        if (c.cedula) next.colaboradores[c.cedula] = c;
+      });
+      next.registros = (data.registrosPagos || []).map(normalizeRegistro);
+      next.serviciosExtra = [...(data.serviciosPersonalizados || [])];
+      next.tiposExtra = [...(data.tiposCuentaPersonalizados || [])];
+      next.bancosExtra = [...(data.bancosPersonalizados || [])];
+      return next;
+    }
+
+    // Formato web nativo
+    if (data.colaboradores && typeof data.colaboradores === "object") {
+      Object.entries(data.colaboradores).forEach(([key, r]) => {
+        const c = colabFromRegistro(r);
+        const ced = c.cedula || cleanCedula(key);
+        if (ced) next.colaboradores[ced] = { ...c, cedula: ced };
+      });
+    }
+    next.registros = (data.registros || []).map(normalizeRegistro);
+    next.serviciosExtra = [...(data.serviciosExtra || [])];
+    next.tiposExtra = [...(data.tiposExtra || [])];
+    next.bancosExtra = [...(data.bancosExtra || [])];
+    return next;
+  }
+
   function exportBackup() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    // Exporta en formato compatible con Windows/Android + campos web
+    const payload = {
+      version: 1,
+      fechaCreacion: new Date().toISOString(),
+      registrosPagos: state.registros,
+      colaboradoresTemporales: Object.fromEntries(
+        Object.entries(state.colaboradores).map(([ced, c]) => [
+          ced,
+          { ...c, id: Date.now(), actividad: "", servicios: [], fechas: [], montoTotal: 0, montoPorActividad: 0, montosPorServicio: {} },
+        ])
+      ),
+      serviciosPersonalizados: state.serviciosExtra,
+      tiposCuentaPersonalizados: state.tiposExtra,
+      bancosPersonalizados: state.bancosExtra,
+      // extras web (login del iPhone)
+      usuario: state.usuario,
+      contrasena: state.contrasena,
+      colaboradores: state.colaboradores,
+      registros: state.registros,
+      serviciosExtra: state.serviciosExtra,
+      tiposExtra: state.tiposExtra,
+      bancosExtra: state.bancosExtra,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `pago-colaboradores-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `PagoColaborador_Backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
-    $("#backupStatus").textContent = "Backup exportado.";
+    $("#backupStatus").textContent = "Backup exportado (compatible con Windows).";
   }
 
   function importBackup(file) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(reader.result);
-        if (!data || typeof data !== "object") throw new Error("Archivo inválido");
-        state = { ...defaultState(), ...data };
+        const raw = String(reader.result || "").trim().replace(/^\uFEFF/, "");
+        const data = JSON.parse(raw);
+        state = normalizeImportedBackup(data);
         save();
-        $("#backupStatus").textContent = "Backup importado correctamente.";
-        toast("Datos restaurados");
+        const nColab = Object.keys(state.colaboradores).length;
+        const nReg = state.registros.length;
+        $("#backupStatus").textContent = `Importado: ${nColab} colaborador(es), ${nReg} registro(s).`;
+        toast("Backup importado");
       } catch (err) {
-        $("#backupStatus").textContent = "No se pudo importar el archivo.";
+        console.error(err);
+        $("#backupStatus").textContent = "No se pudo importar. Usa el JSON de Backup de Windows o de esta web.";
         toast("Backup inválido");
       }
     };

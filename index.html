@@ -181,10 +181,10 @@
         <h1>Backup</h1>
       </header>
       <section class="panel form">
-        <p class="muted">Exporta o importa un archivo JSON. Útil para pasar datos entre dispositivos.</p>
+        <p class="muted">Puedes importar el JSON de Windows (<strong>Exportar Datos</strong> en la app de escritorio) o un backup de esta web. En el iPhone: AirDrop / Archivos → elige el .json.</p>
         <button type="button" class="btn primary" id="exportBackup">Exportar backup</button>
         <label class="btn ghost file-btn">Importar backup
-          <input type="file" id="importBackup" accept="application/json,.json" hidden />
+          <input type="file" id="importBackup" accept="application/json,.json,text/json,*/*" hidden />
         </label>
         <p class="muted" id="backupStatus"></p>
       </section>
