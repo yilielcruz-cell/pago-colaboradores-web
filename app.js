@@ -600,32 +600,134 @@
         </div>
       </div>
       ${blocks || "<p>Sin registros</p>"}
-      <div class="footer">Creado por Eliezer Cruz</div>
     `;
   }
 
-  function openPreview() {
+  function requireEmpresa() {
     if (!($("#empresaReporte")?.value || "").trim()) {
       toast("Escribe el nombre de la compañía");
       $("#empresaReporte")?.focus();
-      return;
+      return false;
     }
+    return true;
+  }
+
+  function openPreview() {
+    if (!requireEmpresa()) return;
     $("#previewContent").innerHTML = buildPrintHtml();
     $("#previewDialog").showModal();
   }
 
-  function printResumen() {
-    if (!($("#empresaReporte")?.value || "").trim()) {
-      toast("Escribe el nombre de la compañía");
-      $("#empresaReporte")?.focus();
-      return;
-    }
-    $("#printArea").innerHTML = buildPrintHtml();
-    $("#printArea").hidden = false;
-    window.print();
+  function runPrint(html) {
+    // Cierra la vista previa para que no se imprima encima
+    try {
+      $("#previewDialog")?.close();
+    } catch (_) {}
+    const area = $("#printArea");
+    area.innerHTML = html;
+    area.hidden = false;
+    area.setAttribute("aria-hidden", "false");
+    // Pequeña espera para que Safari pinte solo #printArea
     setTimeout(() => {
-      $("#printArea").hidden = true;
-    }, 500);
+      window.print();
+      setTimeout(() => {
+        area.hidden = true;
+        area.innerHTML = "";
+        area.setAttribute("aria-hidden", "true");
+      }, 400);
+    }, 50);
+  }
+
+  function printResumen() {
+    if (!requireEmpresa()) return;
+    runPrint(buildPrintHtml());
+  }
+
+  function buildShareText() {
+    const empresa =
+      rememberEmpresa($("#empresaReporte")?.value || state.empresaActual) ||
+      "Sin compañía";
+    const rows = resumenPorColaborador();
+    const total = rows.reduce((a, r) => a + r.total, 0);
+    const lines = [
+      empresa,
+      `TOTAL A PAGAR: ${formatMonto(total)}`,
+      `Colaboradores: ${rows.length}`,
+      "",
+    ];
+    rows.forEach((r) => {
+      lines.push(r.colaborador);
+      lines.push(
+        `Cédula: ${formatCedula(r.cedula)} | Banco: ${r.banco} | Tipo: ${r.tipoCuenta} | Cuenta: ${r.cuenta}`
+      );
+      r.regs.forEach((reg) => {
+        lines.push(`ACTIVIDAD: ${reg.actividad}`);
+        (reg.servicios || []).forEach((s) => {
+          const m = Number(reg.montosPorServicio?.[s] || 0);
+          lines.push(m > 0 ? `- ${s} (${formatMonto(m)})` : `- ${s}`);
+        });
+        const fechasTxt = formatFechas(reg.fechas);
+        if (fechasTxt) lines.push(`Fechas: ${fechasTxt}`);
+        lines.push(`Sub-total: ${formatMonto(reg.montoTotal)}`);
+      });
+      lines.push(`${formatMonto(r.total)} | Días: ${r.dias}`);
+      lines.push("");
+    });
+    return lines.join("\n");
+  }
+
+  async function compartirResumen() {
+    if (!requireEmpresa()) return;
+    const empresa =
+      rememberEmpresa($("#empresaReporte")?.value || state.empresaActual) ||
+      "Reporte";
+    const html = buildPrintHtml();
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(
+      empresa
+    )}</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12.5px;line-height:1.4}
+        .pdf-header{display:flex;justify-content:space-between;gap:16px;margin-bottom:18px}
+        .pdf-company{font-size:28px;font-weight:800;margin:0}
+        .pdf-totals{text-align:right;font-size:12px}
+        .pdf-totals .pay{font-size:14px;font-weight:800;margin-bottom:4px}
+        .colab-name{font-size:16px;font-weight:800;margin:14px 0 6px}
+        .colab-box{border-radius:14px;padding:12px 14px;margin:0 0 8px}
+        .meta-line{font-size:11.5px;margin-bottom:8px}
+        .sec-title{font-weight:800;font-size:12px;margin:8px 0 2px;text-transform:uppercase}
+        .bullet{margin:1px 0 1px 8px}
+        .subtotal{font-weight:700;margin:4px 0 8px 10px}
+        .colab-foot{text-align:right;font-weight:800;margin-top:6px;font-size:13px}
+      </style></head><body>${html}</body></html>`;
+    const safeName = empresa.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
+    const file = new File([fullHtml], `Resumen_${safeName}.html`, {
+      type: "text/html",
+    });
+    const text = buildShareText();
+
+    try {
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Resumen ${empresa}`,
+        });
+        toast("Compartido");
+        return;
+      }
+      if (navigator.share) {
+        await navigator.share({
+          title: `Resumen ${empresa}`,
+          text,
+        });
+        toast("Compartido");
+        return;
+      }
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+    }
+    // Fallback: imprimir / guardar PDF
+    toast("Usa Imprimir → Guardar en PDF / Compartir");
+    runPrint(html);
   }
 
   function colabFromRegistro(r) {
@@ -954,13 +1056,12 @@
     });
 
     $("#imprimirResumen").addEventListener("click", printResumen);
+    $("#compartirResumen").addEventListener("click", () => compartirResumen());
     $("#vistaPrevia").addEventListener("click", openPreview);
     $("#printFromPreview").addEventListener("click", () => {
-      $("#printArea").innerHTML = $("#previewContent").innerHTML;
-      $("#printArea").hidden = false;
-      window.print();
-      setTimeout(() => ($("#printArea").hidden = true), 500);
+      runPrint($("#previewContent").innerHTML);
     });
+    $("#shareFromPreview").addEventListener("click", () => compartirResumen());
     $("#closePreview").addEventListener("click", () => $("#previewDialog").close());
 
     $("#exportBackup").addEventListener("click", exportBackup);

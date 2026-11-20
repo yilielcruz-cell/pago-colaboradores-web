@@ -354,24 +354,38 @@ dialog .btn { margin-top: 10px; }
   margin-top: 6px;
   font-size: 13px;
 }
-.print-doc .footer {
-  text-align: center;
-  color: #666;
-  margin-top: 22px;
-  font-size: 11px;
-}
-
 @media print {
+  @page {
+    size: letter;
+    margin: 12mm;
+  }
+  html, body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   body * { visibility: hidden; }
-  #printArea, #printArea *, #previewContent, #previewContent * { visibility: visible; }
-  #printArea, #previewDialog {
+  #printArea, #printArea * { visibility: visible; }
+  #printArea {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
+    margin: 0;
+    padding: 0;
     background: white;
     display: block !important;
+    box-shadow: none;
+    border-radius: 0;
   }
-  .no-print { display: none !important; }
-  .app-bg, .phone { display: none !important; }
+  #previewDialog,
+  #previewContent,
+  .no-print,
+  .app-bg,
+  .phone,
+  .toast,
+  dialog {
+    display: none !important;
+    visibility: hidden !important;
+  }
 }

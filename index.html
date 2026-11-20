@@ -11,7 +11,7 @@
   <title>Pago a Colaboradores</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="styles.css?v=pdf3" />
+  <link rel="stylesheet" href="styles.css?v=pdf4" />
 </head>
 <body>
   <div class="app-bg" aria-hidden="true"></div>
@@ -56,7 +56,7 @@
         <button type="button" class="btn purple" data-go="backup">Backup</button>
         <button type="button" class="btn ghost" id="logoutBtn">Cerrar sesión</button>
       </nav>
-      <p class="footer-note">Datos solo en este iPhone · Creado por Eliezer Cruz</p>
+      <p class="footer-note">Datos solo en este iPhone</p>
     </main>
 
     <!-- AGREGAR -->
@@ -174,8 +174,9 @@
         <div id="listaResumen" class="list"></div>
         <div class="row">
           <button type="button" class="btn primary" id="imprimirResumen">Imprimir / PDF</button>
-          <button type="button" class="btn ghost" id="vistaPrevia">Vista previa</button>
+          <button type="button" class="btn teal" id="compartirResumen">Compartir</button>
         </div>
+        <button type="button" class="btn ghost" id="vistaPrevia" style="margin-top:10px">Vista previa</button>
       </section>
     </main>
 
@@ -218,12 +219,13 @@
     <div id="previewContent" class="print-doc"></div>
     <div class="row no-print">
       <button type="button" class="btn primary" id="printFromPreview">Imprimir</button>
+      <button type="button" class="btn teal" id="shareFromPreview">Compartir</button>
       <button type="button" class="btn ghost" id="closePreview">Cerrar</button>
     </div>
   </dialog>
 
   <div id="printArea" class="print-doc" hidden></div>
 
-  <script src="app.js?v=pdf3"></script>
+  <script src="app.js?v=pdf4"></script>
 </body>
 </html>
