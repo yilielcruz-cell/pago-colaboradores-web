@@ -11,10 +11,7 @@
   <title>Pago a Colaboradores</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="styles.css?v=import2" />
-  <script>
-    // evita caché vieja en iPhone al actualizar
-  </script>
+  <link rel="stylesheet" href="styles.css?v=pdf3" />
 </head>
 <body>
   <div class="app-bg" aria-hidden="true"></div>
@@ -169,6 +166,11 @@
       </header>
       <section class="panel">
         <div class="total-card" id="totalGeneral">Total General<br /><strong>DOP $0.00</strong></div>
+        <label>Compañía del reporte
+          <input id="empresaReporte" list="empresasList" placeholder="Ej: Audiovisualia" autocomplete="organization" />
+          <datalist id="empresasList"></datalist>
+        </label>
+        <p class="muted">Este nombre aparece arriba a la izquierda del PDF (como en Windows).</p>
         <div id="listaResumen" class="list"></div>
         <div class="row">
           <button type="button" class="btn primary" id="imprimirResumen">Imprimir / PDF</button>
@@ -222,6 +224,6 @@
 
   <div id="printArea" class="print-doc" hidden></div>
 
-  <script src="app.js?v=import2"></script>
+  <script src="app.js?v=pdf3"></script>
 </body>
 </html>

@@ -22,7 +22,20 @@
     serviciosExtra: [],
     tiposExtra: [],
     bancosExtra: [],
+    empresas: ["Audiovisualia"],
+    empresaActual: "Audiovisualia",
   });
+
+  const COLORES_CAJA = [
+    "#F0F8FF",
+    "#FFE4E1",
+    "#F0FFF0",
+    "#FFF8F0",
+    "#E6E6FA",
+    "#E0F6FF",
+    "#F5F5DC",
+    "#B0E0E6",
+  ];
 
   let state = load();
   let selectedServicios = [];
@@ -36,7 +49,14 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return defaultState();
-      return { ...defaultState(), ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      const base = defaultState();
+      return {
+        ...base,
+        ...parsed,
+        empresas: [...new Set([...(base.empresas || []), ...((parsed && parsed.empresas) || [])])],
+        empresaActual: parsed.empresaActual || base.empresaActual,
+      };
     } catch {
       return defaultState();
     }
@@ -455,7 +475,27 @@
     return [...map.values()];
   }
 
+  function rememberEmpresa(nombre) {
+    const n = String(nombre || "").trim();
+    if (!n) return "";
+    state.empresaActual = n;
+    if (!state.empresas.includes(n)) state.empresas = [...state.empresas, n].sort();
+    save();
+    return n;
+  }
+
+  function fillEmpresasUI() {
+    const input = $("#empresaReporte");
+    const list = $("#empresasList");
+    if (!input || !list) return;
+    input.value = state.empresaActual || "";
+    list.innerHTML = (state.empresas || [])
+      .map((e) => `<option value="${escapeAttr(e)}"></option>`)
+      .join("");
+  }
+
   function refreshResumen() {
+    fillEmpresasUI();
     const rows = resumenPorColaborador();
     const total = rows.reduce((a, r) => a + r.total, 0);
     $("#totalGeneral").innerHTML = `Total General<br /><strong>${formatMonto(total)}</strong>`;
@@ -478,58 +518,108 @@
       .join("");
   }
 
+  function formatFechas(fechas) {
+    return (fechas || [])
+      .map((t) => {
+        const d = new Date(Number(t));
+        if (Number.isNaN(d.getTime())) return "";
+        return d.toLocaleDateString("es-DO", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+
   function buildPrintHtml() {
+    const empresa =
+      rememberEmpresa($("#empresaReporte")?.value || state.empresaActual) ||
+      "Sin compañía";
     const rows = resumenPorColaborador();
     const total = rows.reduce((a, r) => a + r.total, 0);
-    const now = new Date().toLocaleString("es-DO");
+    const totalServicios = new Set(
+      state.registros.flatMap((r) => r.servicios || [])
+    ).size;
+
     const blocks = rows
-      .map((r) => {
-        const acts = r.regs
-          .map((reg, i) => {
-            const serv = (reg.servicios || [])
+      .map((r, idx) => {
+        const bg = COLORES_CAJA[idx % COLORES_CAJA.length];
+        const body = r.regs
+          .map((reg) => {
+            const servicios = (reg.servicios || [])
               .map((s) => {
-                const m = reg.montosPorServicio?.[s];
-                return m ? `• ${s}: ${formatMonto(m)}/día` : `• ${s}`;
+                const m = Number(reg.montosPorServicio?.[s] || 0);
+                const label = m > 0 ? `${s} (${formatMonto(m)})` : s;
+                return `<div class="bullet">- ${escapeHtml(label)}</div>`;
               })
-              .join("<br />");
-            return `<div class="right">
-              <strong>${i + 1}. ${escapeHtml(reg.actividad)} — ${formatMonto(reg.montoTotal)}</strong><br />
-              ${serv}<br />
-              Días: ${(reg.fechas || []).length}
-            </div>`;
+              .join("");
+            const fechasTxt = formatFechas(reg.fechas);
+            return `
+              <div class="sec-title">ACTIVIDAD:</div>
+              <div class="bullet">* ${escapeHtml(reg.actividad || "")}</div>
+              <div class="sec-title">SERVICIOS:</div>
+              ${servicios || `<div class="bullet">-</div>`}
+              ${
+                fechasTxt
+                  ? `<div class="bullet" style="margin-top:4px">Fechas: ${escapeHtml(
+                      fechasTxt
+                    )}</div>`
+                  : ""
+              }
+              <div class="subtotal">Sub-total: ${formatMonto(reg.montoTotal)}</div>
+            `;
           })
-          .join("<hr />");
-        return `<div class="block">
-          <strong>Colaborador: ${escapeHtml(r.colaborador)}</strong><br />
-          Cédula: ${formatCedula(r.cedula)}<br />
-          Cuenta: ${escapeHtml(r.cuenta)} | Tipo: ${escapeHtml(r.tipoCuenta)}<br />
-          Banco: ${escapeHtml(r.banco)}
-          ${r.correoElectronico ? `<br />Correo: ${escapeHtml(r.correoElectronico)}` : ""}
-          <h2 class="right">Actividades</h2>
-          ${acts}
-          <div class="tot">TOTAL COLABORADOR (${r.dias} días): ${formatMonto(r.total)}</div>
-        </div>`;
+          .join("");
+
+        return `
+          <div class="colab-name">${escapeHtml(r.colaborador)}</div>
+          <div class="colab-box" style="background:${bg}">
+            <div class="meta-line">
+              Cédula: ${formatCedula(r.cedula)} &nbsp;|&nbsp;
+              Banco: ${escapeHtml(r.banco || "")} &nbsp;|&nbsp;
+              Tipo: ${escapeHtml(r.tipoCuenta || "")} &nbsp;|&nbsp;
+              Cuenta: ${escapeHtml(r.cuenta || "")}
+            </div>
+            ${body}
+            <div class="colab-foot">${formatMonto(r.total)} | Días: ${r.dias}</div>
+          </div>
+        `;
       })
       .join("");
 
     return `
-      <h1>RESUMEN DE PAGOS - COLABORADORES</h1>
-      <div class="meta">Fecha de generación: ${escapeHtml(now)}</div>
-      <p><strong>Total de Pagos:</strong> ${formatMonto(total)}<br />
-      <strong>Cantidad de Colaboradores:</strong> ${rows.length}<br />
-      <strong>Total de Registros:</strong> ${state.registros.length}</p>
-      <h2>DETALLES POR COLABORADOR</h2>
+      <div class="pdf-header">
+        <h1 class="pdf-company">${escapeHtml(empresa)}</h1>
+        <div class="pdf-totals">
+          <div class="pay">TOTAL A PAGAR: ${formatMonto(total)}</div>
+          <div>Colaboradores: ${rows.length}</div>
+          <div>Registros: ${state.registros.length}</div>
+          <div>Servicios: ${totalServicios}</div>
+        </div>
+      </div>
       ${blocks || "<p>Sin registros</p>"}
       <div class="footer">Creado por Eliezer Cruz</div>
     `;
   }
 
   function openPreview() {
+    if (!($("#empresaReporte")?.value || "").trim()) {
+      toast("Escribe el nombre de la compañía");
+      $("#empresaReporte")?.focus();
+      return;
+    }
     $("#previewContent").innerHTML = buildPrintHtml();
     $("#previewDialog").showModal();
   }
 
   function printResumen() {
+    if (!($("#empresaReporte")?.value || "").trim()) {
+      toast("Escribe el nombre de la compañía");
+      $("#empresaReporte")?.focus();
+      return;
+    }
     $("#printArea").innerHTML = buildPrintHtml();
     $("#printArea").hidden = false;
     window.print();
@@ -638,6 +728,14 @@
     next.serviciosExtra = asArray(data.serviciosExtra);
     next.tiposExtra = asArray(data.tiposExtra);
     next.bancosExtra = asArray(data.bancosExtra);
+    next.empresas = [
+      ...new Set([
+        ...(defaultState().empresas || []),
+        ...asArray(data.empresas),
+        ...(data.empresaActual ? [data.empresaActual] : []),
+      ]),
+    ];
+    next.empresaActual = data.empresaActual || state.empresaActual || next.empresas[0] || "";
     return next;
   }
 
