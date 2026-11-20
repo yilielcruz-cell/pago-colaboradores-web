@@ -354,6 +354,13 @@ dialog .btn { margin-top: 10px; }
   margin-top: 6px;
   font-size: 13px;
 }
+.print-doc .footer {
+  text-align: center;
+  color: #666;
+  margin-top: 22px;
+  font-size: 11px;
+}
+
 @media print {
   @page {
     size: letter;

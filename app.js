@@ -600,6 +600,7 @@
         </div>
       </div>
       ${blocks || "<p>Sin registros</p>"}
+      <div class="footer">Creado por Eliezer Cruz</div>
     `;
   }
 
