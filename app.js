@@ -124,6 +124,16 @@
       .sort();
   }
 
+  /** Colaboradores ordenados A→Z por nombre (listas desplegables). */
+  function colaboradoresOrdenados() {
+    return Object.values(state.colaboradores).sort((a, b) =>
+      String(a.colaborador || "").localeCompare(String(b.colaborador || ""), "es", {
+        sensitivity: "base",
+        ignorePunctuation: true,
+      })
+    );
+  }
+
   function fillSelect(select, items, placeholder) {
     select.innerHTML = "";
     if (placeholder) {
@@ -273,7 +283,7 @@
   function refreshModificar() {
     fillSelects("Mod");
     const sel = $("#modificarSelect");
-    const list = Object.values(state.colaboradores);
+    const list = colaboradoresOrdenados();
     fillSelect(
       sel,
       list.map((c) => `${c.colaborador} · ${formatCedula(c.cedula)}`),
@@ -335,7 +345,7 @@
 
   function refreshEliminar() {
     const box = $("#listaEliminar");
-    const list = Object.values(state.colaboradores);
+    const list = colaboradoresOrdenados();
     if (!list.length) {
       box.innerHTML = `<p class="muted">No hay colaboradores.</p>`;
       return;
@@ -359,7 +369,7 @@
     selectedServicios = [];
     montosPorServicio = {};
     fechasSeleccionadas = [];
-    const list = Object.values(state.colaboradores);
+    const list = colaboradoresOrdenados();
     const sel = $("#registroColab");
     fillSelect(
       sel,
@@ -664,7 +674,7 @@
   }
 
   function openEditRegistro(id, isNew = false) {
-    const list = Object.values(state.colaboradores);
+    const list = colaboradoresOrdenados();
     fillSelect(
       $("#editColab"),
       list.map((c) => `${c.colaborador} · ${formatCedula(c.cedula)}`),
