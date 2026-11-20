@@ -22,6 +22,7 @@
     colaboradores: {},
     registros: [],
     serviciosExtra: [],
+    serviciosOcultos: [],
     tiposExtra: [],
     bancosExtra: [],
     empresas: ["Audiovisualia"],
@@ -117,7 +118,10 @@
     return [...new Set([...BANCOS_BASE, ...state.bancosExtra])].sort();
   }
   function serviciosAll() {
-    return [...new Set([...SERVICIOS_BASE, ...state.serviciosExtra])].sort();
+    const ocultos = new Set(state.serviciosOcultos || []);
+    return [...new Set([...SERVICIOS_BASE, ...state.serviciosExtra])]
+      .filter((s) => !ocultos.has(s))
+      .sort();
   }
 
   function fillSelect(select, items, placeholder) {
@@ -399,18 +403,46 @@
   }
 
   function renderServicios() {
-    $("#serviciosChips").innerHTML = selectedServicios
+    const box = $("#serviciosChips");
+    if (!selectedServicios.length) {
+      box.innerHTML = `<p class="muted" style="margin:0">Ningún servicio seleccionado.</p>`;
+      return;
+    }
+    box.innerHTML = selectedServicios
       .map(
-        (s) => `<span class="chip">${escapeHtml(s)} <button type="button" data-rm-serv="${escapeAttr(s)}">×</button></span>`
+        (s) => `<div class="serv-row">
+          <div class="serv-name">• ${escapeHtml(s)}</div>
+          <input class="serv-monto" data-monto="${escapeAttr(s)}" inputmode="decimal" value="${escapeAttr(
+          montosPorServicio[s] || ""
+        )}" placeholder="Monto/día" aria-label="Monto de ${escapeAttr(s)}" />
+          <button type="button" class="icon-btn del" data-rm-serv="${escapeAttr(
+            s
+          )}" title="Eliminar servicio" aria-label="Eliminar ${escapeAttr(s)}">🗑</button>
+        </div>`
       )
       .join("");
-    $("#montosBox").innerHTML = selectedServicios
-      .map(
-        (s) => `<label>${escapeHtml(s)} — monto/día
-          <input data-monto="${escapeAttr(s)}" inputmode="decimal" value="${escapeAttr(montosPorServicio[s] || "")}" placeholder="0.00" />
-        </label>`
-      )
-      .join("");
+  }
+
+  function eliminarServicioDeLista() {
+    const v = $("#registroServicio").value;
+    if (!v) return toast("Elige un servicio de la lista");
+    const esBase = SERVICIOS_BASE.includes(v);
+    const esExtra = state.serviciosExtra.includes(v);
+    if (!esExtra && esBase) {
+      if (!confirm(`“${v}” es un servicio predeterminado. ¿Ocultarlo de la lista en este iPhone?`)) return;
+      state.serviciosExtra = state.serviciosExtra.filter((s) => s !== v);
+      state.serviciosOcultos = [...new Set([...(state.serviciosOcultos || []), v])];
+    } else {
+      if (!confirm(`¿Eliminar “${v}” de la lista de servicios?`)) return;
+      state.serviciosExtra = state.serviciosExtra.filter((s) => s !== v);
+    }
+    selectedServicios = selectedServicios.filter((s) => s !== v);
+    delete montosPorServicio[v];
+    save();
+    fillSelect($("#registroServicio"), serviciosAll(), "Elegir servicio");
+    renderServicios();
+    updateRegistroTotal();
+    toast("Servicio eliminado de la lista");
   }
 
   function renderFechas() {
@@ -1220,12 +1252,15 @@
     $("#addServicioBtn").addEventListener("click", () => {
       const t = prompt("Nuevo servicio:");
       if (!t?.trim()) return;
+      // Si estaba oculto, al crearlo/agregarlo de nuevo lo mostramos
+      state.serviciosOcultos = (state.serviciosOcultos || []).filter((s) => s !== t.trim());
       state.serviciosExtra = [...new Set([...state.serviciosExtra, t.trim()])];
       save();
       fillSelect($("#registroServicio"), serviciosAll(), "Elegir servicio");
       $("#registroServicio").value = t.trim();
       addServicioSeleccionado();
     });
+    $("#delServicioListaBtn").addEventListener("click", eliminarServicioDeLista);
     $("#serviciosChips").addEventListener("click", (e) => {
       const btn = e.target.closest("[data-rm-serv]");
       if (!btn) return;
@@ -1235,7 +1270,7 @@
       renderServicios();
       updateRegistroTotal();
     });
-    $("#montosBox").addEventListener("input", (e) => {
+    $("#serviciosChips").addEventListener("input", (e) => {
       const input = e.target.closest("[data-monto]");
       if (!input) return;
       montosPorServicio[input.dataset.monto] = input.value;

@@ -11,7 +11,7 @@
   <title>Pago a Colaboradores</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="styles.css?v=edit1" />
+  <link rel="stylesheet" href="styles.css?v=serv2" />
 </head>
 <body>
   <div class="app-bg" aria-hidden="true"></div>
@@ -137,9 +137,12 @@
         <label>Servicios
           <select id="registroServicio"></select>
         </label>
-        <button type="button" class="btn ghost mini" id="addServicioBtn">+ Servicio</button>
-        <div id="serviciosChips" class="chips"></div>
-        <div id="montosBox" class="montos"></div>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="btn ghost mini" id="addServicioBtn">+ Servicio</button>
+          <button type="button" class="btn danger mini" id="delServicioListaBtn" title="Eliminar servicio de la lista">🗑 Quitar de lista</button>
+        </div>
+        <div id="serviciosChips" class="serv-list"></div>
+        <div id="montosBox" class="montos" hidden></div>
         <label>Fechas (toca para marcar)
           <input id="fechaPicker" type="date" />
         </label>
@@ -268,6 +271,6 @@
 
   <div id="printArea" class="print-doc" hidden></div>
 
-  <script src="app.js?v=edit1"></script>
+  <script src="app.js?v=serv2"></script>
 </body>
 </html>

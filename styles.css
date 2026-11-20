@@ -309,6 +309,36 @@ textarea {
 }
 
 .montos label { margin-top: 8px; }
+
+.serv-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.serv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--line);
+}
+.serv-row .serv-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.serv-row .serv-monto {
+  width: 110px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+.serv-row .icon-btn {
+  flex-shrink: 0;
+}
 .total {
   margin: 14px 0 8px;
   font-size: 1.15rem;
