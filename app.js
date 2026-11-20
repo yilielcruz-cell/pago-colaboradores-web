@@ -54,12 +54,26 @@
       if (!raw) return defaultState();
       const parsed = JSON.parse(raw);
       const base = defaultState();
-      return {
+      const loaded = {
         ...base,
         ...parsed,
         empresas: [...new Set([...(base.empresas || []), ...((parsed && parsed.empresas) || [])])],
         empresaActual: parsed.empresaActual || base.empresaActual,
       };
+      loaded.colaboradores = migrateColaboradoresMap(loaded.colaboradores || {});
+      // Enlaza registros viejos al colaborador por cédula+nombre si falta colabId
+      loaded.registros = (loaded.registros || []).map((r) => {
+        if (r.colabId && loaded.colaboradores[r.colabId]) return r;
+        const match = Object.values(loaded.colaboradores).find(
+          (c) =>
+            c.cedula === cleanCedula(r.cedula) &&
+            String(c.colaborador || "").toLowerCase() ===
+              String(r.colaborador || "").toLowerCase()
+        );
+        if (match) return { ...r, colabId: match.id };
+        return r;
+      });
+      return loaded;
     } catch {
       return defaultState();
     }
@@ -124,6 +138,10 @@
       .sort();
   }
 
+  function newColabId() {
+    return `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
   /** Colaboradores ordenados A→Z por nombre (listas desplegables). */
   function colaboradoresOrdenados() {
     return Object.values(state.colaboradores).sort((a, b) =>
@@ -132,6 +150,35 @@
         ignorePunctuation: true,
       })
     );
+  }
+
+  function labelColab(c) {
+    return `${c.colaborador} · ${formatCedula(c.cedula)}`;
+  }
+
+  /** Migra mapa viejo (clave=cédula) a IDs únicos; permite cédulas repetidas. */
+  function migrateColaboradoresMap(map) {
+    const out = {};
+    Object.entries(map || {}).forEach(([key, raw]) => {
+      if (!raw || typeof raw !== "object") return;
+      const id = raw.id || (key.startsWith("c_") ? key : newColabId());
+      out[id] = {
+        id,
+        colaborador: raw.colaborador || "",
+        cedula: cleanCedula(raw.cedula || key),
+        cuenta: String(raw.cuenta || "").replace(/\D/g, ""),
+        tipoCuenta: raw.tipoCuenta || "",
+        banco: raw.banco || "",
+        correoElectronico: raw.correoElectronico || "",
+      };
+    });
+    return out;
+  }
+
+  function registroGroupKey(r) {
+    if (r.colabId) return `id:${r.colabId}`;
+    // Datos viejos: separar por nombre+cédula+cuenta para no mezclar "Otros gastos"
+    return `legacy:${r.colaborador || ""}|${cleanCedula(r.cedula)}|${r.cuenta || ""}`;
   }
 
   function fillSelect(select, items, placeholder) {
@@ -272,8 +319,9 @@
     const data = readColabForm(e.target);
     const err = validateColab(data);
     if (err) return toast(err);
-    if (state.colaboradores[data.cedula]) return toast("Ya existe un colaborador con esa cédula");
-    state.colaboradores[data.cedula] = data;
+    // Se permite la misma cédula (ej. "Otros gastos")
+    const id = newColabId();
+    state.colaboradores[id] = { id, ...data };
     save();
     e.target.reset();
     toast("Colaborador guardado");
@@ -286,7 +334,7 @@
     const list = colaboradoresOrdenados();
     fillSelect(
       sel,
-      list.map((c) => `${c.colaborador} · ${formatCedula(c.cedula)}`),
+      list.map(labelColab),
       list.length ? "Seleccionar colaborador" : "No hay colaboradores"
     );
     sel._map = list;
@@ -303,7 +351,7 @@
     }
     const c = sel._map[idx];
     form.hidden = false;
-    form.cedulaOriginal.value = c.cedula;
+    form.colabIdOriginal.value = c.id;
     form.colaborador.value = c.colaborador;
     form.cedula.value = formatCedula(c.cedula);
     form.cedula.dataset.raw = c.cedula;
@@ -316,17 +364,14 @@
   function onModificar(e) {
     e.preventDefault();
     const form = e.target;
-    const original = form.cedulaOriginal.value;
+    const id = form.colabIdOriginal.value;
     const data = readColabForm(form);
     const err = validateColab(data);
     if (err) return toast(err);
-    if (data.cedula !== original && state.colaboradores[data.cedula]) {
-      return toast("Ya existe otra persona con esa cédula");
-    }
-    delete state.colaboradores[original];
-    state.colaboradores[data.cedula] = data;
+    if (!id || !state.colaboradores[id]) return toast("Colaborador no encontrado");
+    state.colaboradores[id] = { id, ...data };
     state.registros = state.registros.map((r) =>
-      r.cedula === original
+      r.colabId === id
         ? {
             ...r,
             colaborador: data.colaborador,
@@ -359,7 +404,7 @@
           <p>${formatCedula(c.cedula)}</p>
           <p>${escapeHtml(c.banco)} · ${escapeHtml(c.cuenta)}</p>
         </div>
-        <button type="button" class="btn danger mini" data-del="${c.cedula}">Eliminar</button>
+        <button type="button" class="btn danger mini" data-del="${escapeAttr(c.id)}">Eliminar</button>
       </div>`
       )
       .join("");
@@ -373,7 +418,7 @@
     const sel = $("#registroColab");
     fillSelect(
       sel,
-      list.map((c) => `${c.colaborador} · ${formatCedula(c.cedula)}`),
+      list.map(labelColab),
       list.length ? "Seleccionar colaborador" : "Agrega un colaborador primero"
     );
     sel._map = list;
@@ -493,6 +538,7 @@
 
     const registro = {
       id: Date.now(),
+      colabId: colab.id,
       colaborador: colab.colaborador,
       cedula: colab.cedula,
       cuenta: colab.cuenta,
@@ -543,7 +589,9 @@
   function resumenPorColaborador() {
     const map = new Map();
     state.registros.forEach((r) => {
-      const cur = map.get(r.cedula) || {
+      const key = registroGroupKey(r);
+      const cur = map.get(key) || {
+        colabId: r.colabId || "",
         colaborador: r.colaborador,
         cedula: r.cedula,
         banco: r.banco,
@@ -557,9 +605,13 @@
       cur.total += Number(r.montoTotal) || 0;
       cur.dias += (r.fechas || []).length;
       cur.regs.push(r);
-      map.set(r.cedula, cur);
+      map.set(key, cur);
     });
-    return [...map.values()];
+    return [...map.values()].sort((a, b) =>
+      String(a.colaborador || "").localeCompare(String(b.colaborador || ""), "es", {
+        sensitivity: "base",
+      })
+    );
   }
 
   function rememberEmpresa(nombre) {
@@ -677,7 +729,7 @@
     const list = colaboradoresOrdenados();
     fillSelect(
       $("#editColab"),
-      list.map((c) => `${c.colaborador} · ${formatCedula(c.cedula)}`),
+      list.map(labelColab),
       list.length ? "Seleccionar colaborador" : "No hay colaboradores"
     );
     $("#editColab")._map = list;
@@ -688,7 +740,14 @@
     if (!isNew) {
       const reg = state.registros.find((r) => String(r.id) === String(id));
       if (!reg) return toast("Registro no encontrado");
-      const idx = list.findIndex((c) => c.cedula === reg.cedula);
+      const idx = list.findIndex(
+        (c) =>
+          (reg.colabId && c.id === reg.colabId) ||
+          (!reg.colabId &&
+            c.cedula === cleanCedula(reg.cedula) &&
+            String(c.colaborador || "").toLowerCase() ===
+              String(reg.colaborador || "").toLowerCase())
+      );
       $("#editColab").selectedIndex = idx >= 0 ? idx + 1 : 0;
       $("#editActividad").value = reg.actividad || "";
       $("#editServicios").value = (reg.servicios || [])
@@ -724,6 +783,7 @@
 
     const idVal = $("#editRegistroId").value;
     const base = {
+      colabId: colab.id,
       colaborador: colab.colaborador,
       cedula: colab.cedula,
       cuenta: colab.cuenta,
@@ -977,7 +1037,9 @@
   }
 
   function colabFromRegistro(r) {
+    const id = r.id && String(r.id).startsWith("c_") ? r.id : r.colabId || newColabId();
     return {
+      id,
       colaborador: r.colaborador || "",
       cedula: cleanCedula(r.cedula),
       cuenta: String(r.cuenta || "").replace(/\D/g, ""),
@@ -994,6 +1056,7 @@
         : {};
     return {
       id: r.id || Date.now(),
+      colabId: r.colabId || "",
       colaborador: r.colaborador || "",
       cedula: cleanCedula(r.cedula),
       cuenta: String(r.cuenta || "").replace(/\D/g, ""),
@@ -1050,14 +1113,32 @@
       const colabMap = asObjectMap(desktopColabs);
       Object.values(colabMap).forEach((r) => {
         const c = colabFromRegistro(r || {});
-        if (c.cedula) next.colaboradores[c.cedula] = c;
+        if (c.cedula || c.colaborador) next.colaboradores[c.id] = c;
       });
       // Si solo hay registros, también arma colaboradores desde ellos
+      // (cada nombre distinto con misma cédula = colaborador aparte)
       asArray(desktopRegs).forEach((r) => {
-        const c = colabFromRegistro(r || {});
-        if (c.cedula && !next.colaboradores[c.cedula]) next.colaboradores[c.cedula] = c;
+        const exists = Object.values(next.colaboradores).some(
+          (c) =>
+            c.cedula === cleanCedula(r.cedula) &&
+            String(c.colaborador || "").toLowerCase() ===
+              String(r.colaborador || "").toLowerCase()
+        );
+        if (!exists) {
+          const c = colabFromRegistro(r || {});
+          if (c.cedula || c.colaborador) next.colaboradores[c.id] = c;
+        }
       });
-      next.registros = asArray(desktopRegs).map(normalizeRegistro);
+      next.registros = asArray(desktopRegs).map((r) => {
+        const norm = normalizeRegistro(r);
+        const match = Object.values(next.colaboradores).find(
+          (c) =>
+            c.cedula === norm.cedula &&
+            String(c.colaborador || "").toLowerCase() ===
+              String(norm.colaborador || "").toLowerCase()
+        );
+        return match ? { ...norm, colabId: match.id } : norm;
+      });
       next.serviciosExtra = asArray(data.serviciosPersonalizados);
       next.tiposExtra = asArray(data.tiposCuentaPersonalizados);
       next.bancosExtra = asArray(data.bancosPersonalizados);
@@ -1066,13 +1147,19 @@
 
     // Formato web nativo
     if (data.colaboradores && typeof data.colaboradores === "object") {
-      Object.entries(asObjectMap(data.colaboradores)).forEach(([key, r]) => {
-        const c = colabFromRegistro(r || {});
-        const ced = c.cedula || cleanCedula(key);
-        if (ced) next.colaboradores[ced] = { ...c, cedula: ced };
-      });
+      next.colaboradores = migrateColaboradoresMap(data.colaboradores);
     }
-    next.registros = asArray(data.registros).map(normalizeRegistro);
+    next.registros = asArray(data.registros).map((r) => {
+      const norm = normalizeRegistro(r);
+      if (norm.colabId && next.colaboradores[norm.colabId]) return norm;
+      const match = Object.values(next.colaboradores).find(
+        (c) =>
+          c.cedula === norm.cedula &&
+          String(c.colaborador || "").toLowerCase() ===
+            String(norm.colaborador || "").toLowerCase()
+      );
+      return match ? { ...norm, colabId: match.id } : norm;
+    });
     next.serviciosExtra = asArray(data.serviciosExtra);
     next.tiposExtra = asArray(data.tiposExtra);
     next.bancosExtra = asArray(data.bancosExtra);
@@ -1117,9 +1204,18 @@
       fechaCreacion: new Date().toISOString(),
       registrosPagos: state.registros,
       colaboradoresTemporales: Object.fromEntries(
-        Object.entries(state.colaboradores).map(([ced, c]) => [
-          ced,
-          { ...c, id: Date.now(), actividad: "", servicios: [], fechas: [], montoTotal: 0, montoPorActividad: 0, montosPorServicio: {} },
+        Object.entries(state.colaboradores).map(([id, c]) => [
+          id,
+          {
+            ...c,
+            id,
+            actividad: "",
+            servicios: [],
+            fechas: [],
+            montoTotal: 0,
+            montoPorActividad: 0,
+            montosPorServicio: {},
+          },
         ])
       ),
       serviciosPersonalizados: state.serviciosExtra,
@@ -1248,10 +1344,11 @@
     $("#listaEliminar").addEventListener("click", (e) => {
       const btn = e.target.closest("[data-del]");
       if (!btn) return;
-      const ced = btn.dataset.del;
-      const name = state.colaboradores[ced]?.colaborador || ced;
+      const id = btn.dataset.del;
+      const name = state.colaboradores[id]?.colaborador || id;
       if (!confirm(`¿Eliminar a ${name}?`)) return;
-      delete state.colaboradores[ced];
+      delete state.colaboradores[id];
+      // No borra registros históricos; solo el colaborador de la lista
       save();
       refreshEliminar();
       toast("Colaborador eliminado");
@@ -1375,6 +1472,8 @@
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 
+  // Persiste migración de IDs (cédulas repetidas permitidas)
+  save();
   wire();
   refreshLogin();
   // Si guardó credenciales y dejó sesión activa, entra directo

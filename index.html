@@ -11,7 +11,7 @@
   <title>Pago a Colaboradores</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="styles.css?v=alpha1" />
+  <link rel="stylesheet" href="styles.css?v=cedula2" />
 </head>
 <body>
   <div class="app-bg" aria-hidden="true"></div>
@@ -99,7 +99,7 @@
           <select id="modificarSelect"></select>
         </label>
         <form id="formModificar" class="form" hidden>
-          <input type="hidden" name="cedulaOriginal" />
+          <input type="hidden" name="colabIdOriginal" />
           <label>Colaborador<input name="colaborador" required /></label>
           <label>Cédula<input name="cedula" inputmode="numeric" maxlength="13" required /></label>
           <label>Número de cuenta<input name="cuenta" inputmode="numeric" required /></label>
@@ -271,6 +271,6 @@
 
   <div id="printArea" class="print-doc" hidden></div>
 
-  <script src="app.js?v=alpha1"></script>
+  <script src="app.js?v=cedula2"></script>
 </body>
 </html>
