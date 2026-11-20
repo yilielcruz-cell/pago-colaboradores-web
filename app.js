@@ -1527,51 +1527,6 @@
       );
       renderEditFechas();
     });
-    $("#deleteEditRegistro").addEventListener("click", () => {
-      const id = $("#editRegistroId").value;
-      if (id) deleteRegistro(id);
-    });
-    $("#editAddServicioBtn").addEventListener("click", addEditServicioSeleccionado);
-    $("#editServicioSelect").addEventListener("change", addEditServicioSeleccionado);
-    $("#editNewServicioBtn").addEventListener("click", () => {
-      const t = prompt("Nuevo servicio:");
-      if (!t?.trim()) return;
-      state.serviciosOcultos = (state.serviciosOcultos || []).filter((s) => s !== t.trim());
-      state.serviciosExtra = [...new Set([...state.serviciosExtra, t.trim()])];
-      save();
-      fillSelect($("#editServicioSelect"), serviciosAll(), "Elegir servicio");
-      $("#editServicioSelect").value = t.trim();
-      addEditServicioSeleccionado();
-    });
-    $("#editServiciosList").addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-edit-rm-serv]");
-      if (!btn) return;
-      const s = btn.dataset.editRmServ;
-      editSelectedServicios = editSelectedServicios.filter((x) => x !== s);
-      delete editMontosPorServicio[s];
-      renderEditServicios();
-    });
-    $("#editServiciosList").addEventListener("input", (e) => {
-      const input = e.target.closest("[data-edit-monto]");
-      if (!input) return;
-      editMontosPorServicio[input.dataset.editMonto] = input.value;
-      updateEditTotal();
-    });
-    $("#editAddFechaBtn").addEventListener("click", () => {
-      const f = $("#editFechaPicker").value;
-      if (!f) return toast("Elige una fecha");
-      if (editFechasSeleccionadas.includes(f)) return toast("Fecha ya agregada");
-      editFechasSeleccionadas.push(f);
-      renderEditFechas();
-    });
-    $("#editFechasList").addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-edit-rm-fecha]");
-      if (!btn) return;
-      editFechasSeleccionadas = editFechasSeleccionadas.filter(
-        (x) => x !== btn.dataset.editRmFecha
-      );
-      renderEditFechas();
-    });
 
     $("#imprimirResumen").addEventListener("click", printResumen);
     $("#compartirResumen").addEventListener("click", () => compartirResumen());
