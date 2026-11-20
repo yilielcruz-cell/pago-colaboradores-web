@@ -17,6 +17,8 @@
   const defaultState = () => ({
     usuario: "",
     contrasena: "",
+    recordarCredenciales: true,
+    sesionActiva: false,
     colaboradores: {},
     registros: [],
     serviciosExtra: [],
@@ -155,6 +157,16 @@
       : "Inicia sesión";
     $("#setupBtn").hidden = !first;
     $("#loginBtn").hidden = first;
+    const remember = $("#rememberCreds");
+    if (remember) remember.checked = state.recordarCredenciales !== false;
+    if (state.recordarCredenciales && state.usuario) {
+      $("#loginUser").value = state.usuario;
+      $("#loginPass").value = state.contrasena || "";
+    }
+  }
+
+  function applyRememberFlag() {
+    state.recordarCredenciales = !!$("#rememberCreds")?.checked;
   }
 
   function tryLogin() {
@@ -162,7 +174,13 @@
     const p = $("#loginPass").value;
     if (!u || !p) return toast("Completa usuario y contraseña");
     if (u === state.usuario && p === state.contrasena) {
-      $("#loginPass").value = "";
+      applyRememberFlag();
+      state.sesionActiva = true;
+      if (!state.recordarCredenciales) {
+        // no deja la contraseña en el formulario
+        $("#loginPass").value = "";
+      }
+      save();
       showScreen("menu");
     } else {
       toast("Credenciales incorrectas");
@@ -174,11 +192,38 @@
     const p = $("#loginPass").value;
     if (!u || !p) return toast("Crea usuario y contraseña");
     if (p.length < 4) return toast("La contraseña debe tener al menos 4 caracteres");
+    applyRememberFlag();
     state.usuario = u;
     state.contrasena = p;
+    state.sesionActiva = true;
     save();
-    toast("Acceso creado");
+    toast(
+      state.recordarCredenciales
+        ? "Acceso creado y guardado en este iPhone"
+        : "Acceso creado"
+    );
     showScreen("menu");
+  }
+
+  function openSettingsDialog() {
+    $("#settingsUser").value = state.usuario || "";
+    $("#settingsPass").value = state.contrasena || "";
+    $("#settingsRemember").checked = state.recordarCredenciales !== false;
+    $("#settingsDialog").showModal();
+  }
+
+  function saveCredentialsFromSettings() {
+    const u = $("#settingsUser").value.trim();
+    const p = $("#settingsPass").value;
+    if (!u || !p) return toast("Completa usuario y contraseña");
+    if (p.length < 4) return toast("La contraseña debe tener al menos 4 caracteres");
+    state.usuario = u;
+    state.contrasena = p;
+    state.recordarCredenciales = !!$("#settingsRemember")?.checked;
+    save();
+    refreshLogin();
+    toast("Usuario y contraseña guardados");
+    $("#settingsDialog").close();
   }
 
   function refreshMenu() {
@@ -501,21 +546,179 @@
     $("#totalGeneral").innerHTML = `Total General<br /><strong>${formatMonto(total)}</strong>`;
     const box = $("#listaResumen");
     if (!rows.length) {
-      box.innerHTML = `<p class="muted">No hay registros de pagos.</p>`;
+      box.innerHTML = `<p class="muted">No hay registros de pagos. Usa “+ Agregar registro”.</p>`;
       return;
     }
     box.innerHTML = rows
-      .map(
-        (r) => `<div class="card-item">
-        <div>
-          <h3>${escapeHtml(r.colaborador)}</h3>
-          <p>C.I.: ${formatCedula(r.cedula)}</p>
-          <p>Banco: ${escapeHtml(r.banco)} · Días: ${r.dias}</p>
-        </div>
-        <div class="amount">${formatMonto(r.total)}</div>
-      </div>`
-      )
+      .map((r) => {
+        const regsHtml = r.regs
+          .map((reg) => {
+            const serv = (reg.servicios || [])
+              .map((s) => {
+                const m = Number(reg.montosPorServicio?.[s] || 0);
+                return m > 0 ? `• ${s}: ${formatMonto(m)}` : `• ${s}`;
+              })
+              .join("<br />");
+            return `<div class="reg-row" data-reg-id="${reg.id}">
+              <div class="reg-main">
+                <strong>${escapeHtml(reg.actividad || "Sin actividad")}</strong>
+                <p>${serv || "Sin servicios"}</p>
+                <p>${escapeHtml(formatFechas(reg.fechas) || "Sin fechas")} · ${
+              (reg.fechas || []).length
+            } día(s)</p>
+              </div>
+              <div class="reg-actions">
+                <span class="amount">${formatMonto(reg.montoTotal)}</span>
+                <div class="row" style="gap:6px;margin:0">
+                  <button type="button" class="icon-btn edit" data-edit-reg="${reg.id}" title="Editar" aria-label="Editar">✎</button>
+                  <button type="button" class="icon-btn del" data-del-reg="${reg.id}" title="Eliminar" aria-label="Eliminar">🗑</button>
+                </div>
+              </div>
+            </div>`;
+          })
+          .join("");
+        return `<div class="resumen-group">
+          <div class="resumen-group-head">
+            <div>
+              <h3>${escapeHtml(r.colaborador)}</h3>
+              <p>C.I.: ${formatCedula(r.cedula)}</p>
+              <p>Banco: ${escapeHtml(r.banco)} · Días: ${r.dias}</p>
+            </div>
+            <div class="amount">${formatMonto(r.total)}</div>
+          </div>
+          ${regsHtml}
+        </div>`;
+      })
       .join("");
+  }
+
+  function fechasToInput(fechas) {
+    return (fechas || [])
+      .map((t) => {
+        const d = new Date(Number(t));
+        if (Number.isNaN(d.getTime())) return "";
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      })
+      .filter(Boolean)
+      .join(",");
+  }
+
+  function parseFechasInput(text) {
+    return String(text || "")
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => new Date(s + "T12:00:00").getTime())
+      .filter((n) => !Number.isNaN(n));
+  }
+
+  function parseServiciosInput(text) {
+    const servicios = [];
+    const montos = {};
+    String(text || "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const [name, monto] = line.split("|").map((x) => x.trim());
+        if (!name) return;
+        servicios.push(name);
+        if (monto) montos[name] = parseMonto(monto);
+      });
+    return { servicios, montos };
+  }
+
+  function openEditRegistro(id, isNew = false) {
+    const list = Object.values(state.colaboradores);
+    fillSelect(
+      $("#editColab"),
+      list.map((c) => `${c.colaborador} · ${formatCedula(c.cedula)}`),
+      list.length ? "Seleccionar colaborador" : "No hay colaboradores"
+    );
+    $("#editColab")._map = list;
+
+    $("#editRegistroTitle").textContent = isNew ? "Agregar registro" : "Editar registro";
+    $("#editRegistroId").value = isNew ? "" : String(id);
+
+    if (!isNew) {
+      const reg = state.registros.find((r) => String(r.id) === String(id));
+      if (!reg) return toast("Registro no encontrado");
+      const idx = list.findIndex((c) => c.cedula === reg.cedula);
+      $("#editColab").selectedIndex = idx >= 0 ? idx + 1 : 0;
+      $("#editActividad").value = reg.actividad || "";
+      $("#editServicios").value = (reg.servicios || [])
+        .map((s) => {
+          const m = reg.montosPorServicio?.[s];
+          return m ? `${s}|${m}` : s;
+        })
+        .join("\n");
+      $("#editFechas").value = fechasToInput(reg.fechas);
+      $("#editMontoTotal").value = String(reg.montoTotal ?? "");
+    } else {
+      $("#editColab").selectedIndex = 0;
+      $("#editActividad").value = "";
+      $("#editServicios").value = "";
+      $("#editFechas").value = "";
+      $("#editMontoTotal").value = "";
+    }
+    $("#editRegistroDialog").showModal();
+  }
+
+  function saveEditRegistro(e) {
+    e.preventDefault();
+    const sel = $("#editColab");
+    const idx = sel.selectedIndex - 1;
+    const colab = sel._map?.[idx];
+    if (!colab) return toast("Selecciona un colaborador");
+    const actividad = $("#editActividad").value.trim();
+    if (!actividad) return toast("La actividad es requerida");
+    const { servicios, montos } = parseServiciosInput($("#editServicios").value);
+    const fechas = parseFechasInput($("#editFechas").value);
+    const montoTotal = parseMonto($("#editMontoTotal").value);
+    if (montoTotal <= 0) return toast("Indica un monto total válido");
+
+    const idVal = $("#editRegistroId").value;
+    const base = {
+      colaborador: colab.colaborador,
+      cedula: colab.cedula,
+      cuenta: colab.cuenta,
+      tipoCuenta: colab.tipoCuenta,
+      banco: colab.banco,
+      correoElectronico: colab.correoElectronico || "",
+      actividad,
+      servicios,
+      montosPorServicio: montos,
+      montoPorActividad:
+        Object.values(montos).reduce((a, b) => a + b, 0) || montoTotal,
+      fechas,
+      montoTotal,
+    };
+
+    if (idVal) {
+      state.registros = state.registros.map((r) =>
+        String(r.id) === String(idVal) ? { ...r, ...base } : r
+      );
+      toast("Registro actualizado");
+    } else {
+      state.registros.push({ id: Date.now(), ...base });
+      toast("Registro agregado");
+    }
+    save();
+    $("#editRegistroDialog").close();
+    refreshResumen();
+  }
+
+  function deleteRegistro(id) {
+    const reg = state.registros.find((r) => String(r.id) === String(id));
+    if (!reg) return;
+    if (!confirm(`¿Eliminar la actividad “${reg.actividad}”?`)) return;
+    state.registros = state.registros.filter((r) => String(r.id) !== String(id));
+    save();
+    refreshResumen();
+    toast("Registro eliminado");
   }
 
   function formatFechas(fechas) {
@@ -948,8 +1151,13 @@
     $("#loginPass").addEventListener("keydown", (e) => {
       if (e.key === "Enter") (!state.usuario ? setupAccess : tryLogin)();
     });
-    $("#openSettings").addEventListener("click", () => $("#settingsDialog").showModal());
+    $("#rememberCreds")?.addEventListener("change", () => {
+      applyRememberFlag();
+      save();
+    });
+    $("#openSettings").addEventListener("click", openSettingsDialog);
     $("#closeSettings").addEventListener("click", () => $("#settingsDialog").close());
+    $("#saveCredsBtn").addEventListener("click", saveCredentialsFromSettings);
     $("#resetApp").addEventListener("click", () => {
       if (!confirm("¿Borrar usuario, colaboradores y pagos de este dispositivo?")) return;
       state = defaultState();
@@ -961,6 +1169,8 @@
     });
 
     $("#logoutBtn").addEventListener("click", () => {
+      state.sesionActiva = false;
+      save();
       showScreen("login");
       refreshLogin();
     });
@@ -1056,6 +1266,27 @@
       toast("Historial limpio");
     });
 
+    $("#listaResumen").addEventListener("click", (e) => {
+      const editBtn = e.target.closest("[data-edit-reg]");
+      if (editBtn) {
+        openEditRegistro(editBtn.dataset.editReg, false);
+        return;
+      }
+      const delBtn = e.target.closest("[data-del-reg]");
+      if (delBtn) deleteRegistro(delBtn.dataset.delReg);
+    });
+    $("#irRegistroDesdeResumen").addEventListener("click", () => {
+      if (!Object.keys(state.colaboradores).length) {
+        toast("Agrega un colaborador primero");
+        return showScreen("agregar");
+      }
+      openEditRegistro(null, true);
+    });
+    $("#formEditRegistro").addEventListener("submit", saveEditRegistro);
+    $("#cancelEditRegistro").addEventListener("click", () =>
+      $("#editRegistroDialog").close()
+    );
+
     $("#imprimirResumen").addEventListener("click", printResumen);
     $("#compartirResumen").addEventListener("click", () => compartirResumen());
     $("#vistaPrevia").addEventListener("click", openPreview);
@@ -1101,6 +1332,11 @@
 
   wire();
   refreshLogin();
-  showScreen("login");
+  // Si guardó credenciales y dejó sesión activa, entra directo
+  if (state.sesionActiva && state.recordarCredenciales && state.usuario && state.contrasena) {
+    showScreen("menu");
+  } else {
+    showScreen("login");
+  }
   registerSW();
 })();

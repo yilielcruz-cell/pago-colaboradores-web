@@ -11,7 +11,7 @@
   <title>Pago a Colaboradores</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="styles.css?v=pdf5" />
+  <link rel="stylesheet" href="styles.css?v=edit1" />
 </head>
 <body>
   <div class="app-bg" aria-hidden="true"></div>
@@ -30,6 +30,10 @@
         </label>
         <label>Contraseña
           <input id="loginPass" type="password" autocomplete="current-password" />
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="rememberCreds" checked />
+          <span>Guardar usuario y contraseña en este iPhone</span>
         </label>
         <button type="button" class="btn primary" id="loginBtn">Entrar</button>
         <button type="button" class="btn ghost" id="setupBtn" hidden>Crear acceso</button>
@@ -172,6 +176,7 @@
         </label>
         <p class="muted">Este nombre aparece arriba a la izquierda del PDF (como en Windows).</p>
         <div id="listaResumen" class="list"></div>
+        <button type="button" class="btn green" id="irRegistroDesdeResumen" style="margin:12px 0 4px">+ Agregar registro</button>
         <div class="row">
           <button type="button" class="btn primary" id="imprimirResumen">Imprimir / PDF</button>
           <button type="button" class="btn teal" id="compartirResumen">Compartir</button>
@@ -210,9 +215,46 @@
   <div id="toast" class="toast hidden"></div>
   <dialog id="settingsDialog">
     <h2>Configuración</h2>
-    <p class="muted">Puedes resetear el acceso y todos los datos de este dispositivo.</p>
+    <p class="muted">Actualiza o guarda tu acceso en este iPhone.</p>
+    <label>Usuario
+      <input id="settingsUser" type="text" autocomplete="username" />
+    </label>
+    <label>Contraseña
+      <input id="settingsPass" type="password" autocomplete="new-password" />
+    </label>
+    <label class="check-row">
+      <input type="checkbox" id="settingsRemember" checked />
+      <span>Guardar usuario y contraseña</span>
+    </label>
+    <button type="button" class="btn primary" id="saveCredsBtn">Guardar usuario y contraseña</button>
     <button type="button" class="btn danger" id="resetApp">Resetear aplicación</button>
     <button type="button" class="btn ghost" id="closeSettings">Cerrar</button>
+  </dialog>
+
+  <dialog id="editRegistroDialog" class="wide">
+    <h2 id="editRegistroTitle">Editar registro</h2>
+    <form id="formEditRegistro" class="form">
+      <input type="hidden" id="editRegistroId" />
+      <label>Colaborador
+        <select id="editColab" required></select>
+      </label>
+      <label>Actividad
+        <input id="editActividad" required />
+      </label>
+      <label>Servicios (uno por línea, opcional: nombre|monto)
+        <textarea id="editServicios" rows="4" placeholder="Camarógrafo|3500"></textarea>
+      </label>
+      <label>Fechas (AAAA-MM-DD separadas por coma)
+        <input id="editFechas" placeholder="2026-03-15,2026-03-16" />
+      </label>
+      <label>Monto total
+        <input id="editMontoTotal" inputmode="decimal" required />
+      </label>
+      <div class="row">
+        <button type="submit" class="btn primary">Guardar</button>
+        <button type="button" class="btn ghost" id="cancelEditRegistro">Cancelar</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="previewDialog" class="wide">
@@ -226,6 +268,6 @@
 
   <div id="printArea" class="print-doc" hidden></div>
 
-  <script src="app.js?v=pdf5"></script>
+  <script src="app.js?v=edit1"></script>
 </body>
 </html>
