@@ -44,6 +44,10 @@
   let selectedServicios = [];
   let montosPorServicio = {};
   let fechasSeleccionadas = [];
+  // Estado del diálogo editar registro
+  let editSelectedServicios = [];
+  let editMontosPorServicio = {};
+  let editFechasSeleccionadas = [];
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -504,7 +508,8 @@
     $("#fechasChips").innerHTML = fechasSeleccionadas
       .sort()
       .map(
-        (f) => `<span class="chip">${f} <button type="button" data-rm-fecha="${f}">×</button></span>`
+        (f) =>
+          `<span class="chip">${f} <button type="button" data-rm-fecha="${f}" aria-label="Eliminar fecha">🗑</button></span>`
       )
       .join("");
   }
@@ -700,29 +705,64 @@
       .join(",");
   }
 
-  function parseFechasInput(text) {
-    return String(text || "")
-      .split(/[,\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((s) => new Date(s + "T12:00:00").getTime())
-      .filter((n) => !Number.isNaN(n));
+  function calcEditTotal() {
+    const montos = editSelectedServicios.map((s) =>
+      parseMonto(editMontosPorServicio[s])
+    );
+    const suma = montos.reduce((a, b) => a + b, 0);
+    if (editSelectedServicios.length > 1) return suma;
+    return suma * editFechasSeleccionadas.length;
   }
 
-  function parseServiciosInput(text) {
-    const servicios = [];
-    const montos = {};
-    String(text || "")
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .forEach((line) => {
-        const [name, monto] = line.split("|").map((x) => x.trim());
-        if (!name) return;
-        servicios.push(name);
-        if (monto) montos[name] = parseMonto(monto);
-      });
-    return { servicios, montos };
+  function updateEditTotal() {
+    const el = $("#editRegistroTotal");
+    if (el) el.textContent = `Total: ${formatMonto(calcEditTotal())}`;
+  }
+
+  function renderEditServicios() {
+    const box = $("#editServiciosList");
+    if (!box) return;
+    if (!editSelectedServicios.length) {
+      box.innerHTML = `<p class="muted" style="margin:0">Sin servicios. Agrega al menos uno.</p>`;
+      updateEditTotal();
+      return;
+    }
+    box.innerHTML = editSelectedServicios
+      .map(
+        (s) => `<div class="serv-row">
+          <div class="serv-name">• ${escapeHtml(s)}</div>
+          <input class="serv-monto" data-edit-monto="${escapeAttr(s)}" inputmode="decimal" value="${escapeAttr(
+          editMontosPorServicio[s] || ""
+        )}" placeholder="Monto/día" />
+          <button type="button" class="icon-btn del" data-edit-rm-serv="${escapeAttr(
+            s
+          )}" title="Eliminar servicio" aria-label="Eliminar servicio">🗑</button>
+        </div>`
+      )
+      .join("");
+    updateEditTotal();
+  }
+
+  function renderEditFechas() {
+    const box = $("#editFechasList");
+    if (!box) return;
+    box.innerHTML = editFechasSeleccionadas
+      .sort()
+      .map(
+        (f) =>
+          `<span class="chip">${f} <button type="button" data-edit-rm-fecha="${f}" aria-label="Quitar fecha">🗑</button></span>`
+      )
+      .join("");
+    updateEditTotal();
+  }
+
+  function addEditServicioSeleccionado() {
+    const v = $("#editServicioSelect").value;
+    if (!v) return toast("Elige un servicio");
+    if (editSelectedServicios.includes(v)) return toast("Ya está agregado");
+    editSelectedServicios.push(v);
+    editMontosPorServicio[v] = editMontosPorServicio[v] || "";
+    renderEditServicios();
   }
 
   function openEditRegistro(id, isNew = false) {
@@ -733,9 +773,11 @@
       list.length ? "Seleccionar colaborador" : "No hay colaboradores"
     );
     $("#editColab")._map = list;
+    fillSelect($("#editServicioSelect"), serviciosAll(), "Elegir servicio");
 
     $("#editRegistroTitle").textContent = isNew ? "Agregar registro" : "Editar registro";
     $("#editRegistroId").value = isNew ? "" : String(id);
+    $("#deleteEditRegistro").hidden = isNew;
 
     if (!isNew) {
       const reg = state.registros.find((r) => String(r.id) === String(id));
@@ -750,21 +792,25 @@
       );
       $("#editColab").selectedIndex = idx >= 0 ? idx + 1 : 0;
       $("#editActividad").value = reg.actividad || "";
-      $("#editServicios").value = (reg.servicios || [])
-        .map((s) => {
-          const m = reg.montosPorServicio?.[s];
-          return m ? `${s}|${m}` : s;
-        })
-        .join("\n");
-      $("#editFechas").value = fechasToInput(reg.fechas);
-      $("#editMontoTotal").value = String(reg.montoTotal ?? "");
+      editSelectedServicios = [...(reg.servicios || [])];
+      editMontosPorServicio = { ...(reg.montosPorServicio || {}) };
+      editSelectedServicios.forEach((s) => {
+        if (editMontosPorServicio[s] == null) editMontosPorServicio[s] = "";
+        else editMontosPorServicio[s] = String(editMontosPorServicio[s]);
+      });
+      editFechasSeleccionadas = fechasToInput(reg.fechas)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
     } else {
       $("#editColab").selectedIndex = 0;
       $("#editActividad").value = "";
-      $("#editServicios").value = "";
-      $("#editFechas").value = "";
-      $("#editMontoTotal").value = "";
+      editSelectedServicios = [];
+      editMontosPorServicio = {};
+      editFechasSeleccionadas = [];
     }
+    renderEditServicios();
+    renderEditFechas();
     $("#editRegistroDialog").showModal();
   }
 
@@ -776,11 +822,17 @@
     if (!colab) return toast("Selecciona un colaborador");
     const actividad = $("#editActividad").value.trim();
     if (!actividad) return toast("La actividad es requerida");
-    const { servicios, montos } = parseServiciosInput($("#editServicios").value);
-    const fechas = parseFechasInput($("#editFechas").value);
-    const montoTotal = parseMonto($("#editMontoTotal").value);
-    if (montoTotal <= 0) return toast("Indica un monto total válido");
+    if (!editSelectedServicios.length) return toast("Agrega al menos un servicio");
+    if (!editFechasSeleccionadas.length) return toast("Agrega al menos una fecha");
 
+    const montos = {};
+    editSelectedServicios.forEach((s) => {
+      montos[s] = parseMonto(editMontosPorServicio[s]);
+    });
+    if (Object.values(montos).every((n) => n <= 0)) {
+      return toast("Indica montos válidos en los servicios");
+    }
+    const montoTotal = calcEditTotal();
     const idVal = $("#editRegistroId").value;
     const base = {
       colabId: colab.id,
@@ -791,11 +843,10 @@
       banco: colab.banco,
       correoElectronico: colab.correoElectronico || "",
       actividad,
-      servicios,
+      servicios: [...editSelectedServicios],
       montosPorServicio: montos,
-      montoPorActividad:
-        Object.values(montos).reduce((a, b) => a + b, 0) || montoTotal,
-      fechas,
+      montoPorActividad: Object.values(montos).reduce((a, b) => a + b, 0),
+      fechas: editFechasSeleccionadas.map((f) => new Date(f + "T12:00:00").getTime()),
       montoTotal,
     };
 
@@ -819,6 +870,9 @@
     if (!confirm(`¿Eliminar la actividad “${reg.actividad}”?`)) return;
     state.registros = state.registros.filter((r) => String(r.id) !== String(id));
     save();
+    try {
+      $("#editRegistroDialog")?.close();
+    } catch (_) {}
     refreshResumen();
     toast("Registro eliminado");
   }
@@ -1428,6 +1482,51 @@
     $("#cancelEditRegistro").addEventListener("click", () =>
       $("#editRegistroDialog").close()
     );
+    $("#deleteEditRegistro").addEventListener("click", () => {
+      const id = $("#editRegistroId").value;
+      if (id) deleteRegistro(id);
+    });
+    $("#editAddServicioBtn").addEventListener("click", addEditServicioSeleccionado);
+    $("#editServicioSelect").addEventListener("change", addEditServicioSeleccionado);
+    $("#editNewServicioBtn").addEventListener("click", () => {
+      const t = prompt("Nuevo servicio:");
+      if (!t?.trim()) return;
+      state.serviciosOcultos = (state.serviciosOcultos || []).filter((s) => s !== t.trim());
+      state.serviciosExtra = [...new Set([...state.serviciosExtra, t.trim()])];
+      save();
+      fillSelect($("#editServicioSelect"), serviciosAll(), "Elegir servicio");
+      $("#editServicioSelect").value = t.trim();
+      addEditServicioSeleccionado();
+    });
+    $("#editServiciosList").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-edit-rm-serv]");
+      if (!btn) return;
+      const s = btn.dataset.editRmServ;
+      editSelectedServicios = editSelectedServicios.filter((x) => x !== s);
+      delete editMontosPorServicio[s];
+      renderEditServicios();
+    });
+    $("#editServiciosList").addEventListener("input", (e) => {
+      const input = e.target.closest("[data-edit-monto]");
+      if (!input) return;
+      editMontosPorServicio[input.dataset.editMonto] = input.value;
+      updateEditTotal();
+    });
+    $("#editAddFechaBtn").addEventListener("click", () => {
+      const f = $("#editFechaPicker").value;
+      if (!f) return toast("Elige una fecha");
+      if (editFechasSeleccionadas.includes(f)) return toast("Fecha ya agregada");
+      editFechasSeleccionadas.push(f);
+      renderEditFechas();
+    });
+    $("#editFechasList").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-edit-rm-fecha]");
+      if (!btn) return;
+      editFechasSeleccionadas = editFechasSeleccionadas.filter(
+        (x) => x !== btn.dataset.editRmFecha
+      );
+      renderEditFechas();
+    });
 
     $("#imprimirResumen").addEventListener("click", printResumen);
     $("#compartirResumen").addEventListener("click", () => compartirResumen());

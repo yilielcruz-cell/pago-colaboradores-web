@@ -11,7 +11,7 @@
   <title>Pago a Colaboradores</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="styles.css?v=cedula2" />
+  <link rel="stylesheet" href="styles.css?v=editreg2" />
 </head>
 <body>
   <div class="app-bg" aria-hidden="true"></div>
@@ -244,19 +244,28 @@
       <label>Actividad
         <input id="editActividad" required />
       </label>
-      <label>Servicios (uno por línea, opcional: nombre|monto)
-        <textarea id="editServicios" rows="4" placeholder="Camarógrafo|3500"></textarea>
+
+      <label>Agregar servicio
+        <select id="editServicioSelect"></select>
       </label>
-      <label>Fechas (AAAA-MM-DD separadas por coma)
-        <input id="editFechas" placeholder="2026-03-15,2026-03-16" />
-      </label>
-      <label>Monto total
-        <input id="editMontoTotal" inputmode="decimal" required />
-      </label>
-      <div class="row">
-        <button type="submit" class="btn primary">Guardar</button>
-        <button type="button" class="btn ghost" id="cancelEditRegistro">Cancelar</button>
+      <div class="row" style="margin-top:8px">
+        <button type="button" class="btn ghost mini" id="editAddServicioBtn">+ Agregar servicio</button>
+        <button type="button" class="btn ghost mini" id="editNewServicioBtn">+ Nuevo nombre</button>
       </div>
+      <div id="editServiciosList" class="serv-list"></div>
+
+      <label>Fechas
+        <input id="editFechaPicker" type="date" />
+      </label>
+      <button type="button" class="btn ghost mini" id="editAddFechaBtn">+ Agregar fecha</button>
+      <div id="editFechasList" class="chips"></div>
+
+      <p class="total" id="editRegistroTotal">Total: DOP $0.00</p>
+      <div class="row">
+        <button type="submit" class="btn primary">Guardar cambios</button>
+        <button type="button" class="btn danger" id="deleteEditRegistro" hidden>Eliminar registro</button>
+      </div>
+      <button type="button" class="btn ghost" id="cancelEditRegistro" style="margin-top:10px">Cancelar</button>
     </form>
   </dialog>
 
@@ -271,6 +280,6 @@
 
   <div id="printArea" class="print-doc" hidden></div>
 
-  <script src="app.js?v=cedula2"></script>
+  <script src="app.js?v=editreg2"></script>
 </body>
 </html>
