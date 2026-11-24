@@ -1036,58 +1036,168 @@
     return lines.join("\n");
   }
 
+  let preparedPdfShare = null; // { key, file }
+
+  function resumenShareKey(empresa) {
+    return [
+      empresa,
+      state.registros.length,
+      state.registros
+        .map(
+          (r) =>
+            `${r.id || ""}:${r.montoTotal || 0}:${(r.servicios || []).join("+")}`
+        )
+        .join("|"),
+    ].join("::");
+  }
+
+  async function buildResumenPdfFile(empresa) {
+    if (!window.html2canvas || !window.jspdf?.jsPDF) {
+      throw new Error("Librerías PDF no cargadas");
+    }
+
+    const html = buildPrintHtml();
+    const host = document.createElement("div");
+    host.className = "print-doc";
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText =
+      "position:fixed;left:-10000px;top:0;width:816px;background:#fff;color:#111;padding:24px;box-sizing:border-box;z-index:-1;";
+    host.innerHTML = html;
+    document.body.appendChild(host);
+
+    try {
+      // Espera un frame para que Safari aplique estilos
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+      const canvas = await window.html2canvas(host, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        logging: false,
+        windowWidth: 816,
+      });
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "letter",
+      });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 28;
+      const usableWidth = pageWidth - margin * 2;
+      const usableHeight = pageHeight - margin * 2;
+      const imgWidth = usableWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const sliceHeightPx = Math.max(
+        1,
+        Math.floor((usableHeight / imgHeight) * canvas.height)
+      );
+
+      const pageCanvas = document.createElement("canvas");
+      const pageCtx = pageCanvas.getContext("2d");
+      let yPx = 0;
+      let first = true;
+
+      while (yPx < canvas.height) {
+        const h = Math.min(sliceHeightPx, canvas.height - yPx);
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = Math.ceil(h);
+        pageCtx.fillStyle = "#ffffff";
+        pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pageCtx.drawImage(
+          canvas,
+          0,
+          yPx,
+          canvas.width,
+          h,
+          0,
+          0,
+          canvas.width,
+          h
+        );
+
+        const imgData = pageCanvas.toDataURL("image/jpeg", 0.92);
+        const sliceH = (h * imgWidth) / canvas.width;
+        if (!first) pdf.addPage();
+        first = false;
+        pdf.addImage(imgData, "JPEG", margin, margin, imgWidth, sliceH);
+        yPx += h;
+      }
+
+      const blob = pdf.output("blob");
+      const safeName = empresa.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
+      return new File([blob], `Resumen_${safeName}.pdf`, {
+        type: "application/pdf",
+      });
+    } finally {
+      host.remove();
+    }
+  }
+
+  function downloadPdfFile(file) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(file);
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  }
+
   async function compartirResumen() {
     if (!requireEmpresa()) return;
+    try {
+      $("#previewDialog")?.close();
+    } catch (_) {}
+
     const empresa =
       rememberEmpresa($("#empresaReporte")?.value || state.empresaActual) ||
       "Reporte";
-    const html = buildPrintHtml();
-    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(
-      empresa
-    )}</title>
-      <style>
-        body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12.5px;line-height:1.4}
-        .pdf-header{display:flex;justify-content:space-between;gap:16px;margin-bottom:18px}
-        .pdf-company{font-size:28px;font-weight:800;margin:0}
-        .pdf-totals{text-align:right;font-size:12px}
-        .pdf-totals .pay{font-size:14px;font-weight:800;margin-bottom:4px}
-        .colab-name{font-size:16px;font-weight:800;margin:14px 0 6px}
-        .colab-box{border-radius:14px;padding:12px 14px;margin:0 0 8px}
-        .meta-line{font-size:11.5px;margin-bottom:8px}
-        .sec-title{font-weight:800;font-size:12px;margin:8px 0 2px;text-transform:uppercase}
-        .bullet{margin:1px 0 1px 8px}
-        .subtotal{font-weight:700;margin:4px 0 8px 10px}
-        .colab-foot{text-align:right;font-weight:800;margin-top:6px;font-size:13px}
-      </style></head><body>${html}</body></html>`;
-    const safeName = empresa.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
-    const file = new File([fullHtml], `Resumen_${safeName}.html`, {
-      type: "text/html",
-    });
-    const text = buildShareText();
+    const key = resumenShareKey(empresa);
 
-    try {
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Resumen ${empresa}`,
-        });
-        toast("Compartido");
+    let file =
+      preparedPdfShare && preparedPdfShare.key === key
+        ? preparedPdfShare.file
+        : null;
+
+    if (!file) {
+      toast("Generando PDF…");
+      try {
+        file = await buildResumenPdfFile(empresa);
+        preparedPdfShare = { key, file };
+      } catch (err) {
+        console.error(err);
+        toast("No se pudo generar el PDF");
         return;
       }
-      if (navigator.share) {
-        await navigator.share({
-          title: `Resumen ${empresa}`,
-          text,
-        });
-        toast("Compartido");
+    }
+
+    const shareData = {
+      files: [file],
+      title: `Resumen ${empresa}`,
+    };
+
+    try {
+      if (navigator.share && navigator.canShare?.(shareData)) {
+        // Si la generación tardó, iOS pierde la activación: pedir segundo toque
+        if (navigator.userActivation && navigator.userActivation.isActive === false) {
+          toast("PDF listo — pulsa Compartir otra vez");
+          return;
+        }
+        await navigator.share(shareData);
+        toast("PDF compartido");
         return;
       }
     } catch (err) {
       if (err && err.name === "AbortError") return;
+      console.error(err);
     }
-    // Fallback: imprimir / guardar PDF
-    toast("Usa Imprimir → Guardar en PDF / Compartir");
-    runPrint(html);
+
+    // Fallback: descargar PDF real (nunca HTML/XML)
+    downloadPdfFile(file);
+    toast("PDF descargado");
   }
 
   function colabFromRegistro(r) {
