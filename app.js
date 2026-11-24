@@ -1101,9 +1101,10 @@
     page.className = "print-doc pdf-page";
     page.style.cssText = [
       "position:fixed",
-      "left:-10000px",
+      "left:-12000px",
       "top:0",
       `width:${widthPx}px`,
+      `min-height:${heightPx}px`,
       `height:${heightPx}px`,
       "background:#fff",
       "color:#111",
@@ -1113,6 +1114,27 @@
       "z-index:-1",
     ].join(";");
     return page;
+  }
+
+  function pageContentBottom(page) {
+    const kids = [...page.children];
+    if (!kids.length) return 0;
+    const pageTop = page.getBoundingClientRect().top;
+    let max = 0;
+    kids.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      max = Math.max(max, r.bottom - pageTop);
+    });
+    // restar padding-top del page (ya incluido en getBoundingClientRect de hijos
+    // porque están son relativos al border box... bottom-top incluye padding area)
+    return max;
+  }
+
+  function pageOverflows(page, pageH) {
+    // Con height fijo + overflow hidden, scrollHeight > clientHeight si no cabe
+    void page.offsetHeight;
+    if (page.scrollHeight > page.clientHeight + 2) return true;
+    return pageContentBottom(page) > pageH + 1;
   }
 
   async function captureNodeToPdfPage(pdf, node, isFirst) {
@@ -1142,7 +1164,7 @@
   }
 
   async function addTallBlockAsPages(pdf, blockNode, pageW, pageH, startFirst) {
-    // Un solo colaborador más alto que la hoja: página(s) solo para él, sin mezclar otros
+    // Colaborador más alto que una hoja: páginas solo para él
     const wrap = createPdfPageShell(pageW, pageH);
     wrap.style.height = "auto";
     wrap.style.minHeight = `${pageH}px`;
@@ -1162,7 +1184,6 @@
       });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      // Cortar solo este colaborador en hojas letter (sin mezclar otros)
       const canvasPageH = Math.max(
         1,
         Math.round(canvas.width * (pageH / pageW))
@@ -1190,7 +1211,7 @@
         );
         y += canvasPageH;
       }
-      return false; // next page is not first
+      return false;
     } finally {
       wrap.remove();
     }
@@ -1201,15 +1222,13 @@
       throw new Error("Librerías PDF no cargadas");
     }
 
-    const PAGE_W = 816; // letter width @ 96dpi-ish
-    const PAGE_H = Math.round((PAGE_W * 11) / 8.5); // 1056
-    const PAD = 24;
-    const USABLE_H = PAGE_H - PAD * 2;
+    const PAGE_W = 816;
+    const PAGE_H = Math.round((PAGE_W * 11) / 8.5); // letter
 
     const measure = document.createElement("div");
     measure.className = "print-doc";
     measure.setAttribute("aria-hidden", "true");
-    measure.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W}px;background:#fff;color:#111;padding:${PAD}px;box-sizing:border-box;z-index:-1;`;
+    measure.style.cssText = `position:fixed;left:-12000px;top:0;width:${PAGE_W}px;background:#fff;color:#111;padding:24px;box-sizing:border-box;z-index:-1;`;
     measure.innerHTML = buildPrintHtml();
     document.body.appendChild(measure);
 
@@ -1229,9 +1248,14 @@
       const blocks = [...measure.querySelectorAll(".colab-block")];
       const footer = measure.querySelector(".footer");
 
+      // Piezas en orden: encabezado (solo 1ª vez), colaboradores, pie
+      const pieces = [];
+      if (header) pieces.push(header);
+      pieces.push(...blocks);
+      if (footer) pieces.push(footer);
+
       let page = createPdfPageShell(PAGE_W, PAGE_H);
       document.body.appendChild(page);
-      let used = 0;
       let isFirstPdfPage = true;
 
       const flushPage = async () => {
@@ -1241,23 +1265,30 @@
         page.remove();
         page = createPdfPageShell(PAGE_W, PAGE_H);
         document.body.appendChild(page);
-        used = 0;
       };
 
-      const placeNode = async (node) => {
-        const h = Math.ceil(
-          node.getBoundingClientRect().height || node.offsetHeight || 0
-        );
-        if (h <= 0) return;
+      // Empaqueta: si cabe en la hoja actual, se queda; si no, nueva hoja y ahí empieza
+      for (const node of pieces) {
+        const clone = node.cloneNode(true);
+        page.appendChild(clone);
+        void page.offsetHeight;
 
-        // Si no cabe en el resto de la hoja y ya hay contenido → nueva página
-        if (used > 0 && used + h > USABLE_H) {
-          await flushPage();
+        if (!pageOverflows(page, PAGE_H)) {
+          continue; // cabe: mezcla con los que ya están
         }
 
-        // Bloque más alto que una hoja → páginas solo para ese colaborador
-        if (h > USABLE_H) {
-          if (used > 0) await flushPage();
+        // No cabe con lo anterior → sacar y abrir hoja nueva
+        if (page.childNodes.length > 1) {
+          clone.remove();
+          await flushPage();
+          page.appendChild(clone);
+          void page.offsetHeight;
+        }
+
+        // Si aún así no cabe solo en una hoja → partir solo ese colaborador
+        if (pageOverflows(page, PAGE_H)) {
+          clone.remove();
+          if (page.childNodes.length) await flushPage();
           page.remove();
           isFirstPdfPage = await addTallBlockAsPages(
             pdf,
@@ -1266,22 +1297,11 @@
             PAGE_H,
             isFirstPdfPage
           );
-          // addTallBlockAsPages returns false meaning next is not first
           page = createPdfPageShell(PAGE_W, PAGE_H);
           document.body.appendChild(page);
-          used = 0;
-          return;
         }
-
-        page.appendChild(node.cloneNode(true));
-        used += h;
-      };
-
-      if (header) await placeNode(header);
-      for (const block of blocks) {
-        await placeNode(block);
       }
-      if (footer) await placeNode(footer);
+
       await flushPage();
       page.remove();
 

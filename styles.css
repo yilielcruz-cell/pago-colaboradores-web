@@ -419,17 +419,19 @@ dialog .btn { margin-top: 10px; }
   break-inside: avoid;
   page-break-inside: avoid;
   -webkit-column-break-inside: avoid;
+  margin: 0 0 12px;
+  padding-top: 2px; /* evita colapso de márgenes al medir */
 }
 .print-doc .colab-name {
   font-size: 16px;
   font-weight: 800;
-  margin: 14px 0 6px;
+  margin: 4px 0 6px;
   color: #000;
 }
 .print-doc .colab-box {
   border-radius: 14px;
   padding: 12px 14px 10px;
-  margin: 0 0 8px;
+  margin: 0;
   color: #111;
 }
 .print-doc .meta-line {
