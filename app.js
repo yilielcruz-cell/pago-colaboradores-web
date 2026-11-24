@@ -933,16 +933,18 @@
           .join("");
 
         return `
-          <div class="colab-name">${escapeHtml(r.colaborador)}</div>
-          <div class="colab-box" style="background:${bg}">
-            <div class="meta-line">
-              Cédula: ${formatCedula(r.cedula)} &nbsp;|&nbsp;
-              Banco: ${escapeHtml(r.banco || "")} &nbsp;|&nbsp;
-              Tipo: ${escapeHtml(r.tipoCuenta || "")} &nbsp;|&nbsp;
-              Cuenta: ${escapeHtml(r.cuenta || "")}
+          <div class="colab-block">
+            <div class="colab-name">${escapeHtml(r.colaborador)}</div>
+            <div class="colab-box" style="background:${bg}">
+              <div class="meta-line">
+                Cédula: ${formatCedula(r.cedula)} &nbsp;|&nbsp;
+                Banco: ${escapeHtml(r.banco || "")} &nbsp;|&nbsp;
+                Tipo: ${escapeHtml(r.tipoCuenta || "")} &nbsp;|&nbsp;
+                Cuenta: ${escapeHtml(r.cuenta || "")}
+              </div>
+              ${body}
+              <div class="colab-foot">${formatMonto(r.total)} | Días: ${r.dias}</div>
             </div>
-            ${body}
-            <div class="colab-foot">${formatMonto(r.total)} | Días: ${r.dias}</div>
           </div>
         `;
       })
@@ -986,20 +988,63 @@
     const area = $("#printArea");
     area.innerHTML = html;
     area.hidden = false;
+    area.removeAttribute("hidden");
     area.setAttribute("aria-hidden", "false");
     // Pequeña espera para que Safari pinte solo #printArea
     setTimeout(() => {
       window.print();
       setTimeout(() => {
         area.hidden = true;
+        area.setAttribute("hidden", "");
         area.innerHTML = "";
         area.setAttribute("aria-hidden", "true");
       }, 400);
     }, 50);
   }
 
-  function printResumen() {
+  async function printResumen() {
     if (!requireEmpresa()) return;
+    try {
+      $("#previewDialog")?.close();
+    } catch (_) {}
+
+    // En iPhone / PWA window.print() suele fallar: entregar PDF real
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    if (isStandalone || isIOS || !window.print) {
+      const empresa =
+        rememberEmpresa($("#empresaReporte")?.value || state.empresaActual) ||
+        "Reporte";
+      toast("Generando PDF…");
+      try {
+        const file = await buildResumenPdfFile(empresa);
+        preparedPdfShare = { key: resumenShareKey(empresa), file };
+        const shareData = { files: [file], title: `Resumen ${empresa}` };
+        if (navigator.share && navigator.canShare?.(shareData)) {
+          if (
+            navigator.userActivation &&
+            navigator.userActivation.isActive === false
+          ) {
+            downloadPdfFile(file);
+            toast("PDF listo — ábrelo para imprimir");
+            return;
+          }
+          await navigator.share(shareData);
+          toast("PDF listo");
+          return;
+        }
+        downloadPdfFile(file);
+        toast("PDF descargado — ábrelo para imprimir");
+      } catch (err) {
+        console.error(err);
+        toast("No se pudo generar el PDF");
+      }
+      return;
+    }
+
     runPrint(buildPrintHtml());
   }
 
@@ -1051,80 +1096,194 @@
     ].join("::");
   }
 
+  function createPdfPageShell(widthPx, heightPx) {
+    const page = document.createElement("div");
+    page.className = "print-doc pdf-page";
+    page.style.cssText = [
+      "position:fixed",
+      "left:-10000px",
+      "top:0",
+      `width:${widthPx}px`,
+      `height:${heightPx}px`,
+      "background:#fff",
+      "color:#111",
+      "padding:24px",
+      "box-sizing:border-box",
+      "overflow:hidden",
+      "z-index:-1",
+    ].join(";");
+    return page;
+  }
+
+  async function captureNodeToPdfPage(pdf, node, isFirst) {
+    await new Promise((r) =>
+      requestAnimationFrame(() => requestAnimationFrame(r))
+    );
+    const canvas = await window.html2canvas(node, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+      logging: false,
+      width: node.offsetWidth,
+      height: node.offsetHeight,
+      windowWidth: node.offsetWidth,
+    });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    if (!isFirst) pdf.addPage();
+    pdf.addImage(
+      canvas.toDataURL("image/jpeg", 0.92),
+      "JPEG",
+      0,
+      0,
+      pageWidth,
+      pageHeight
+    );
+  }
+
+  async function addTallBlockAsPages(pdf, blockNode, pageW, pageH, startFirst) {
+    // Un solo colaborador más alto que la hoja: página(s) solo para él, sin mezclar otros
+    const wrap = createPdfPageShell(pageW, pageH);
+    wrap.style.height = "auto";
+    wrap.style.minHeight = `${pageH}px`;
+    wrap.style.overflow = "visible";
+    wrap.appendChild(blockNode.cloneNode(true));
+    document.body.appendChild(wrap);
+    try {
+      await new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r))
+      );
+      const canvas = await window.html2canvas(wrap, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        logging: false,
+        windowWidth: pageW,
+      });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      // Cortar solo este colaborador en hojas letter (sin mezclar otros)
+      const canvasPageH = Math.max(
+        1,
+        Math.round(canvas.width * (pageH / pageW))
+      );
+      const pageCanvas = document.createElement("canvas");
+      const ctx = pageCanvas.getContext("2d");
+      let y = 0;
+      let first = startFirst;
+      while (y < canvas.height) {
+        const h = Math.min(canvasPageH, canvas.height - y);
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = canvasPageH;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+        if (!first) pdf.addPage();
+        first = false;
+        pdf.addImage(
+          pageCanvas.toDataURL("image/jpeg", 0.92),
+          "JPEG",
+          0,
+          0,
+          pageWidth,
+          pageHeight
+        );
+        y += canvasPageH;
+      }
+      return false; // next page is not first
+    } finally {
+      wrap.remove();
+    }
+  }
+
   async function buildResumenPdfFile(empresa) {
     if (!window.html2canvas || !window.jspdf?.jsPDF) {
       throw new Error("Librerías PDF no cargadas");
     }
 
-    const html = buildPrintHtml();
-    const host = document.createElement("div");
-    host.className = "print-doc";
-    host.setAttribute("aria-hidden", "true");
-    host.style.cssText =
-      "position:fixed;left:-10000px;top:0;width:816px;background:#fff;color:#111;padding:24px;box-sizing:border-box;z-index:-1;";
-    host.innerHTML = html;
-    document.body.appendChild(host);
+    const PAGE_W = 816; // letter width @ 96dpi-ish
+    const PAGE_H = Math.round((PAGE_W * 11) / 8.5); // 1056
+    const PAD = 24;
+    const USABLE_H = PAGE_H - PAD * 2;
+
+    const measure = document.createElement("div");
+    measure.className = "print-doc";
+    measure.setAttribute("aria-hidden", "true");
+    measure.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W}px;background:#fff;color:#111;padding:${PAD}px;box-sizing:border-box;z-index:-1;`;
+    measure.innerHTML = buildPrintHtml();
+    document.body.appendChild(measure);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "pt",
+      format: "letter",
+    });
 
     try {
-      // Espera un frame para que Safari aplique estilos
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-      const canvas = await window.html2canvas(host, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-        logging: false,
-        windowWidth: 816,
-      });
-
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "letter",
-      });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 28;
-      const usableWidth = pageWidth - margin * 2;
-      const usableHeight = pageHeight - margin * 2;
-      const imgWidth = usableWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      const sliceHeightPx = Math.max(
-        1,
-        Math.floor((usableHeight / imgHeight) * canvas.height)
+      await new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r))
       );
 
-      const pageCanvas = document.createElement("canvas");
-      const pageCtx = pageCanvas.getContext("2d");
-      let yPx = 0;
-      let first = true;
+      const header = measure.querySelector(".pdf-header");
+      const blocks = [...measure.querySelectorAll(".colab-block")];
+      const footer = measure.querySelector(".footer");
 
-      while (yPx < canvas.height) {
-        const h = Math.min(sliceHeightPx, canvas.height - yPx);
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = Math.ceil(h);
-        pageCtx.fillStyle = "#ffffff";
-        pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        pageCtx.drawImage(
-          canvas,
-          0,
-          yPx,
-          canvas.width,
-          h,
-          0,
-          0,
-          canvas.width,
-          h
+      let page = createPdfPageShell(PAGE_W, PAGE_H);
+      document.body.appendChild(page);
+      let used = 0;
+      let isFirstPdfPage = true;
+
+      const flushPage = async () => {
+        if (!page.childNodes.length) return;
+        await captureNodeToPdfPage(pdf, page, isFirstPdfPage);
+        isFirstPdfPage = false;
+        page.remove();
+        page = createPdfPageShell(PAGE_W, PAGE_H);
+        document.body.appendChild(page);
+        used = 0;
+      };
+
+      const placeNode = async (node) => {
+        const h = Math.ceil(
+          node.getBoundingClientRect().height || node.offsetHeight || 0
         );
+        if (h <= 0) return;
 
-        const imgData = pageCanvas.toDataURL("image/jpeg", 0.92);
-        const sliceH = (h * imgWidth) / canvas.width;
-        if (!first) pdf.addPage();
-        first = false;
-        pdf.addImage(imgData, "JPEG", margin, margin, imgWidth, sliceH);
-        yPx += h;
+        // Si no cabe en el resto de la hoja y ya hay contenido → nueva página
+        if (used > 0 && used + h > USABLE_H) {
+          await flushPage();
+        }
+
+        // Bloque más alto que una hoja → páginas solo para ese colaborador
+        if (h > USABLE_H) {
+          if (used > 0) await flushPage();
+          page.remove();
+          isFirstPdfPage = await addTallBlockAsPages(
+            pdf,
+            node,
+            PAGE_W,
+            PAGE_H,
+            isFirstPdfPage
+          );
+          // addTallBlockAsPages returns false meaning next is not first
+          page = createPdfPageShell(PAGE_W, PAGE_H);
+          document.body.appendChild(page);
+          used = 0;
+          return;
+        }
+
+        page.appendChild(node.cloneNode(true));
+        used += h;
+      };
+
+      if (header) await placeNode(header);
+      for (const block of blocks) {
+        await placeNode(block);
       }
+      if (footer) await placeNode(footer);
+      await flushPage();
+      page.remove();
 
       const blob = pdf.output("blob");
       const safeName = empresa.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
@@ -1132,7 +1291,8 @@
         type: "application/pdf",
       });
     } finally {
-      host.remove();
+      measure.remove();
+      document.querySelectorAll(".pdf-page").forEach((n) => n.remove());
     }
   }
 
@@ -1642,7 +1802,7 @@
     $("#compartirResumen").addEventListener("click", () => compartirResumen());
     $("#vistaPrevia").addEventListener("click", openPreview);
     $("#printFromPreview").addEventListener("click", () => {
-      runPrint($("#previewContent").innerHTML);
+      printResumen();
     });
     $("#shareFromPreview").addEventListener("click", () => compartirResumen());
     $("#closePreview").addEventListener("click", () => $("#previewDialog").close());

@@ -415,6 +415,11 @@ dialog .btn { margin-top: 10px; }
   font-weight: 800;
   margin-bottom: 4px;
 }
+.print-doc .colab-block {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+}
 .print-doc .colab-name {
   font-size: 16px;
   font-weight: 800;
@@ -474,11 +479,19 @@ dialog .btn { margin-top: 10px; }
     top: 0;
     width: 100%;
     margin: 0;
-    padding: 0;
+    padding: 12px 16px;
     background: white;
     display: block !important;
     box-shadow: none;
     border-radius: 0;
+  }
+  #printArea .colab-block {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  #printArea .pdf-header {
+    break-after: avoid;
+    page-break-after: avoid;
   }
   #previewDialog,
   #previewContent,
